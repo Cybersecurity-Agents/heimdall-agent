@@ -1,0 +1,94 @@
+# Pack tarballs
+deploy/**/dist/
+hosted/**/dist/
+/deploy/inimage/
+
+# Secrets & local env
+.env
+.env.*
+!.env.example
+tools.env.yaml
+/config.yaml
+*.pem
+*.key
+
+# Runtime data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Node (console React SPA)
+node_modules/
+
+# Local browser / test dumps
+.playwright-mcp/
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs / temp
+*.log
+tmp/
+.cache/
+
+# Local bench artifacts (keep token/ovpn/dumps outside git)
+tsecbench/_probe*
+tsecbench/_analyze*
+tsecbench/_fw.ps1
+tsecbench/_tap*
+tsecbench/agent-llm-dumps/
+tsecbench/openvpn.log
+tsecbench/joint_run_*.log
+tsecbench/*.ovpn
+tsecbench/token.txt
+
+# Claude / Grok local
+.claude/settings.local.json
+.grok/
+
+# Local observer / capability cache
+.heimdall/
+
+# Generated frontend output and local toolkit leftovers
+/console/spa/
+/tools/c2/
+/tools/proxy/
+
+# Generated compatibility paths
+/tools/wordlists
+/workspaces/
+!/scripts/build/
+!/scripts/build/**
+
+/tools/
+/entrypoints/
+/deploy/install/
+
+# Deployment backups can contain model credentials and task sessions.
+/heimdall-backup*/
+*.sfdisk

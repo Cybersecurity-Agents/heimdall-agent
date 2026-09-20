@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Thin OCR helper. Reads an image path or stdin; prints text.
+set -euo pipefail
+if ! command -v tesseract >/dev/null 2>&1; then
+  echo "heimdall-ocr: tesseract not installed (rebuild heimdall:latest)" >&2
+  exit 2
+fi
+lang="${HEIMDALL_OCR_LANG:-eng+chi_sim}"
+if [[ $# -ge 1 && -f "$1" ]]; then
+  exec tesseract "$1" stdout -l "$lang" 2>/dev/null
+fi
+tmp="$(mktemp /tmp/heimdall-ocr.XXXXXX)"
+trap 'rm -f "$tmp"' EXIT
+cat >"$tmp"
+if [[ ! -s "$tmp" ]]; then
+  echo "heimdall-ocr: empty input" >&2
+  exit 2
+fi
+exec tesseract "$tmp" stdout -l "$lang" 2>/dev/null

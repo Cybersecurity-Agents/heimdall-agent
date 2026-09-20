@@ -1,0 +1,10 @@
+# docker compose -f compose.yaml -f deploy/compose.build.yaml build
+services:
+  heimdall:
+    image: heimdall:dev
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: all-in-one
+    environment:
+      HEIMDALL_EXECUTOR_IMAGE: heimdall:executor-dev

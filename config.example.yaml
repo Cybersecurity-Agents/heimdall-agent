@@ -1,0 +1,161 @@
+# Copy to config.yaml or set env vars. Never commit secrets.
+
+# Claude uses its native /goal; task completion is verified by the control plane.
+goal:
+  driver: native_required  # legacy is an explicit rollback option
+  persistence: until_satisfied  # bounded retains scheduler attempt limits
+  max_duration_sec: 0  # 0 = no task-wide deadline; per-attempt time slices still apply
+  small_model: ""  # optional provider model for ALL Claude small-model functions
+  checks: {}  # registered validators: {id: {command: /absolute/path, args: [], timeout_sec: 30}}
+  acceptance_by_code: {}
+  # url-example: {kind: local_flags, requiredCount: 1, validatorId: my-validator}
+  # a-01: {kind: platform_flags}  # whole challenge, including every required flag
+  # url-report: {kind: checks, checkIds: [report-schema, acceptance-tests]}
+
+# Leave blank to run local / URL-direct jobs. Daemon then uses DirectBench.
+benchmark:
+  base_url: ${BENCHMARK_BASE_URL}
+  token: ${BENCHMARK_TOKEN}
+
+scheduler:
+  max_slots: 3
+  default_timeout_sec: 1800
+  # Unused (legacy). Regular uses default_timeout_sec / timeout_by_type.
+  brief_regular_timeout_sec: 480
+  # Regular wall. unique_code in timeout_by_code wins over type.
+  timeout_by_type:
+    intranet: 4800
+  timeout_by_code: {}
+  # timeout_by_code:
+  #   b-01: 5400
+  max_attempts_per_challenge: 3
+  # Host-side auto hint before agent starts (costs score). Off by default.
+  auto_hint: false
+  # Daemon tick interval (idle and while jobs run). Do not set below ~2s.
+  poll_interval_sec: 5
+  # Joint admission: min(local agent slots, platform instance slots)
+  # Both daemon and queue use the same admission helper.
+  dual_capacity: true
+  platform_cap: 3
+  reconcile:
+    close_completed: true
+    reattach_available: true
+    close_orphans: true
+    close_verify_attempts: 3
+  start_gate_timeout_sec: 30
+  start_budget_sec: 45
+  kill_timeout_sec: 10
+  capacity_backoff:
+    initial_sec: 2
+    max_sec: 30
+  # Optional: park challenges (daemon will not start/reattach them)
+  # skip_codes:
+  #   - example-code
+  # Regular 30min Pi → loop slot (1 while first-pass remains; max_slots when idle).
+  # Loop is Claude SDK, 1h wall, Pi observer on. HEIMDALL_LOOP=0 disables.
+  # Separate loop LLM key/url/model: tools.env.yaml `loop:` (HEIMDALL_LOOP_*).
+  loop:
+    enabled: true
+    slots: 1
+    expand_when_idle: true
+    timeout_sec: 3600
+    timeout_by_type:
+      intranet: 5400
+    timeout_by_code: {}
+    escalate_on_timeout: true
+    max_queue: 32
+    max_loop_per_challenge: 2
+    # Second loop waits until every remaining unsolved has had a first loop.
+    # intranet: another loop per remaining flag (capped).
+    # by_type:
+    #   intranet: remaining_flags
+    # remaining_flags_cap: 3
+    backend: sdk
+    # Web / all first loop GET /hint after this even with generated brief.
+    # Intranet: skip Pi → direct SDK loop; hint only on loop 2 after 30min.
+    hint_after_sec: 1800
+    direct_types: [intranet]
+    # Intranet typed codes skip Pi and go straight to the SDK loop.
+    # hint_after_by_type:
+    #   intranet: 3600
+    # hint_after_by_code: {}
+    # hint_first_loop_types: [web, all, cve, pwn, evasion]
+    # hint_first_loop_codes: []
+    # skip_first_loop_hint_codes: []
+  # Unified web workspace. No type waves — live bench level is not a type signal.
+  dispatch_waves: []
+  resources:
+    enabled: true
+    lab_exclusive:
+      types: []
+      max_concurrent: 1
+      scout_timeout_sec: 0
+      defer_loop_until_scouted: false
+    addr_mutex: true
+
+images:
+  default: ghcr.io/qiantangcredit/heimdall:executor-latest
+  pwn: ghcr.io/qiantangcredit/heimdall:executor-latest
+  rules: [] # Explicit image rules win; [] routes by the resolved challenge type.
+
+# Unified all workspace unless a console project picks a strategy preset.
+# Global priority: overrides[code] > by_level[level] > rules(code regex) > default all.
+# Console projects use their own strategy and saved task workspaces for scheduling
+# and execution; they do not inherit these global type mappings.
+# Standalone daemon: configure types here or export a project's strategy with
+# bin/heimdall export-strategy --project <id> --out workspace_strategy.yaml
+types:
+  default: all
+  by_level: {}
+  overrides: {}
+  rules: []
+
+observe:
+  enabled: true
+  every_sec: 300
+  warmup_sec: 60
+  loop_every_sec: 660
+  loop_warmup_sec: 660
+
+# Container agent (Pi first-pass; loop job overrides backend to sdk)
+agent:
+  backend: pi               # pi | sdk | cli | auto
+  permission_mode: bypassPermissions
+  max_turns: 0  # 0 = unlimited; job still stops at type / default timeout
+  allow_cli_fallback: true
+  allow_sdk_fallback: false
+
+docker:
+  shm_size: 1g
+  runtime: docker
+  runtime_mounts: image # source: development-only overlays from this checkout
+  # docker.runtime: docker | local (local requires the full tools container)
+  # local = control plane and ctf-agent.sh jobs in one image (no nested docker).
+  tools_mount: platform
+  # Prefer vpn.sidecar over network_mode: host on Windows Docker Desktop.
+  # network_mode: host   # only when using host OpenVPN + no sidecar
+  network_mode: null
+  # auto: built-in OpenVPN for local workspace; sidecar for Docker executors.
+  # The default Compose image needs no separate VPN image.
+  vpn:
+    enabled: true
+    mode: auto             # auto | embedded | sidecar | off
+    image: ghcr.io/qiantangcredit/heimdall:vpn-latest
+    container_name: heimdall-vpn
+    # config: /path/to/lab.ovpn
+    ready_timeout_sec: 90
+    privileged: false
+    # netns = agents join sidecar (default). gateway = isolated lo + route 10/8.
+    isolate: netns
+    fabric_network: heimdall-lab
+    fabric_subnet: 172.31.200.0/24
+    fabric_gw: 172.31.200.2
+  # dry_run: true        # simulate agent without Docker (local smoke)
+  # dry_run_delay_sec: 0.3
+  # Agent 工具密钥只来自 tools.env.yaml，不从宿主机 env 透传
+  enforce_tools_required: true
+
+paths:
+  data_dir: data
+  # Solver / observer / loop environment — see tools.env.example.yaml
+  tools_env: tools.env.yaml

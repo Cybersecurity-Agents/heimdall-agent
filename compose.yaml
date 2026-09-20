@@ -1,0 +1,44 @@
+name: heimdall
+services:
+  heimdall:
+    image: ${HEIMDALL_IMAGE:-ghcr.io/qiantangcredit/heimdall:latest}
+    platform: linux/amd64
+    init: true
+    ports:
+      - "${HEIMDALL_BIND:-127.0.0.1}:${HEIMDALL_PORT:-8700}:8700"
+    volumes:
+      - heimdall-data:/opt/heimdall/data
+    # OpenVPN runs inside this container, only after connecting in Settings.
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    shm_size: 1gb
+    environment:
+      HEIMDALL_AGENT_RUNTIME: local
+      HEIMDALL_EXECUTOR_IMAGE: ${HEIMDALL_EXECUTOR_IMAGE:-ghcr.io/qiantangcredit/heimdall:executor-latest}
+      HEIMDALL_OBSERVE: "1"
+      HEIMDALL_AGENT_MODEL: ${HEIMDALL_AGENT_MODEL:-}
+      HEIMDALL_LLM_BASE_URL: ${HEIMDALL_LLM_BASE_URL:-}
+      HEIMDALL_LLM_API_KEY: ${HEIMDALL_LLM_API_KEY:-}
+      HEIMDALL_LLM_API: ${HEIMDALL_LLM_API:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      HEIMDALL_LOOP_API_KEY: ${HEIMDALL_LOOP_API_KEY:-}
+      HEIMDALL_LOOP_BASE_URL: ${HEIMDALL_LOOP_BASE_URL:-}
+      HEIMDALL_LOOP_MODEL: ${HEIMDALL_LOOP_MODEL:-}
+      BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-}
+      BENCHMARK_TOKEN: ${BENCHMARK_TOKEN:-}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8700/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 30s
+    restart: unless-stopped
+volumes:
+  heimdall-data:

@@ -1,0 +1,33 @@
+# Legacy external VPN deployment; default compose.yaml already includes VPN.
+# Workspace mode only. Do not combine this outer VPN with the DinD override.
+# Set HEIMDALL_VPN_CONFIG to a host .ovpn path. Ports belong to the VPN netns.
+services:
+  heimdall:
+    cap_add: !reset []
+    devices: !reset []
+    environment:
+      HEIMDALL_VPN_ENABLED: "0"
+    ports: !reset []
+    network_mode: service:vpn
+    depends_on:
+      vpn:
+        condition: service_healthy
+  vpn:
+    image: ${HEIMDALL_VPN_IMAGE:-ghcr.io/qiantangcredit/heimdall:vpn-latest}
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    volumes:
+      - type: bind
+        source: ${HEIMDALL_VPN_CONFIG:?Set HEIMDALL_VPN_CONFIG to your lab .ovpn file}
+        target: /vpn/client.ovpn
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "${HEIMDALL_BIND:-127.0.0.1}:${HEIMDALL_PORT:-8700}:8700"
+    healthcheck:
+      test: [CMD-SHELL, "ip -o link show | grep -Eq 'tun|tap' && grep -q 'Initialization Sequence Completed' /var/log/openvpn-client.log"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped

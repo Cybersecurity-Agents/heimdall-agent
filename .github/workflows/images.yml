@@ -1,0 +1,83 @@
+name: container-release
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish verified images to GHCR
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  packages: write
+jobs:
+  full-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            console/package-lock.json
+      - name: Check GHCR package visibility matches the repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/build/verify-package-privacy.mjs
+      - name: Make space on the disposable hosted runner
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - run: npm ci && npm --prefix console ci
+      - run: npm test && npm run build && npm run test:release
+      - name: Build full environment from public sources
+        run: |
+          docker build -f deploy/Dockerfile --target all-in-one -t heimdall:public-test .
+          docker build -f deploy/Dockerfile --target executor -t heimdall:executor-test .
+          docker build -f deploy/Dockerfile --target vpn -t heimdall:vpn-test .
+      - name: Verify release images
+        run: |
+          node scripts/build/smoke-container.mjs heimdall:public-test
+          node scripts/build/smoke-direct.mjs heimdall:public-test
+          node scripts/build/smoke-vpn.mjs heimdall:public-test
+          node scripts/build/smoke-runtime.mjs heimdall:public-test
+          node scripts/build/smoke-docker.mjs heimdall:executor-test
+          node scripts/build/smoke-dind.mjs heimdall:public-test heimdall:executor-test
+          docker image inspect heimdall:public-test --format 'Engine-reported image size: {{.Size}} bytes'
+          docker image ls heimdall:public-test
+      - name: Publish verified version and matching executor
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          registry="ghcr.io/${OWNER,,}/heimdall"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          for tag in "sha-${SHA:0:12}" latest; do
+            docker tag heimdall:public-test "$registry:$tag"
+            docker tag heimdall:executor-test "$registry:executor-$tag"
+            docker push "$registry:$tag"
+            docker push "$registry:executor-$tag"
+            docker tag heimdall:vpn-test "$registry:vpn-$tag"
+            docker push "$registry:vpn-$tag"
+          done
+          if [[ "$REF" == v* ]]; then
+            docker tag heimdall:public-test "$registry:$REF"
+            docker tag heimdall:executor-test "$registry:executor-$REF"
+            docker push "$registry:$REF"
+            docker push "$registry:executor-$REF"
+            docker tag heimdall:vpn-test "$registry:vpn-$REF"
+            docker push "$registry:vpn-$REF"
+          fi
+      - name: Verify published package visibility
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/build/verify-package-privacy.mjs --require-existing

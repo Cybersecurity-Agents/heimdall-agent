@@ -1,0 +1,88 @@
+# Unified image: console + solver in one container.
+# Challenges are isolated by workspace. No nested dockerd.
+
+benchmark:
+  base_url: ${BENCHMARK_BASE_URL}
+  token: ${BENCHMARK_TOKEN}
+
+scheduler:
+  max_slots: 3
+  default_timeout_sec: 1800
+  brief_regular_timeout_sec: 480
+  timeout_by_type:
+    intranet: 4800
+  timeout_by_code: {}
+  max_attempts_per_challenge: 8
+  auto_hint: false
+  poll_interval_sec: 5
+  dual_capacity: true
+  platform_cap: 3
+  reconcile:
+    close_completed: true
+    reattach_available: true
+    close_orphans: true
+  loop:
+    enabled: true
+    slots: 1
+    expand_when_idle: true
+    timeout_sec: 3600
+    timeout_by_type:
+      intranet: 5400
+    timeout_by_code: {}
+    escalate_on_timeout: true
+    max_queue: 32
+    max_loop_per_challenge: 2
+    by_type: {}
+    remaining_flags_cap: 3
+    backend: sdk
+    hint_after_sec: 1800
+    direct_types: [intranet]
+  dispatch_waves: []
+  resources:
+    enabled: true
+    lab_exclusive:
+      types: []
+      max_concurrent: 1
+      scout_timeout_sec: 0
+      defer_loop_until_scouted: false
+    addr_mutex: true
+
+images:
+  default: ghcr.io/qiantangcredit/heimdall:executor-latest
+  pwn: ghcr.io/qiantangcredit/heimdall:executor-latest
+  rules: []
+
+types:
+  default: all
+  by_level: {}
+  overrides: {}
+  rules: []
+
+observe:
+  enabled: true
+  every_sec: 300
+  warmup_sec: 60
+  loop_every_sec: 660
+  loop_warmup_sec: 660
+
+agent:
+  backend: pi
+  permission_mode: bypassPermissions
+  max_turns: 0
+  allow_cli_fallback: true
+  allow_sdk_fallback: false
+
+docker:
+  runtime: local
+  runtime_mounts: image
+  shm_size: 1g
+  tools_mount: none
+  network_mode: null
+  vpn:
+    enabled: true
+    mode: auto
+    ready_timeout_sec: 90
+
+paths:
+  data_dir: /opt/heimdall/data
+  tools_env: /opt/heimdall/tools.env.yaml

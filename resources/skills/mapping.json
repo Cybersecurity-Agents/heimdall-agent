@@ -1,0 +1,13 @@
+{
+  "common": [
+    "waf-bypass"
+  ],
+  "types": {
+    "web": [],
+    "cve": [],
+    "intranet": [],
+    "pwn": [],
+    "evasion": [],
+    "all": []
+  }
+}

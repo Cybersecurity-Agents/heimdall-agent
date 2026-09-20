@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# JDumpSpider and common string encodings, using the bundled Java 8 runtime.
+set -euo pipefail
+if [ $# -ne 1 ] || [ ! -f "$1" ]; then echo 'Usage: heapdump-extract FILE.hprof' >&2; exit 2; fi
+jdumpspider "$1"
+for encoding in s l b; do strings -e "$encoding" "$1"; done

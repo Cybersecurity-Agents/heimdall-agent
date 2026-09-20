@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# PATH shadow for `playwright-cli`: stdout unchanged; map hint on stderr.
+set -u
+_strip="${HEIMDALL_WORKSPACE:-/workspace}/.heimdall/hooks"
+_PATH_SAVE="$PATH"
+if [[ -n "${_strip}" ]]; then
+  PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -F "${_strip}" | paste -sd: -)"
+  export PATH
+fi
+_real=""
+for c in playwright-cli playwright; do
+  _real="$(command -v "$c" 2>/dev/null || true)"
+  if [[ -n "${_real}" && -x "${_real}" ]]; then
+    break
+  fi
+done
+export PATH="$_PATH_SAVE"
+if [[ -z "${_real}" ]]; then
+  echo "heimdall_hook_playwright: playwright-cli not found" >&2
+  exit 127
+fi
+"${_real}" "$@"
+_rc=$?
+if [[ "${HEIMDALL_HOOK_HINT:-}" == "1" ]] && [[ -f "${HEIMDALL_WORKSPACE:-/workspace}/hint.txt" ]]; then
+  echo "PLATFORM HINT:" >&2
+  head -n 20 "${HEIMDALL_WORKSPACE:-/workspace}/hint.txt" >&2 || true
+fi
+exit "${_rc}"

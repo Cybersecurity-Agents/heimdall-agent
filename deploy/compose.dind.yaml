@@ -1,0 +1,36 @@
+# docker compose -f compose.yaml -f deploy/compose.dind.yaml up -d
+services:
+  heimdall:
+    cap_add: !reset []
+    devices: !reset []
+    environment:
+      HEIMDALL_AGENT_RUNTIME: docker
+      HEIMDALL_VPN_MODE: sidecar
+      # Opt in only when Docker executor tasks need a lab VPN.
+      HEIMDALL_VPN_ENABLED: ${HEIMDALL_VPN_ENABLED:-0}
+      DOCKER_HOST: unix:///run/heimdall-docker/docker.sock
+    volumes:
+      - dind-socket:/run/heimdall-docker
+    depends_on:
+      dind:
+        condition: service_healthy
+  dind:
+    image: docker:29.3.0-dind@sha256:1ba18449911d01f477a3fc104123c85d677addc60701b14b3fcb5381f9c4a537
+    privileged: true
+    # Unix socket only; do not expose a Docker TCP API.
+    entrypoint: [dockerd]
+    command: ["--host=unix:///run/heimdall-docker/docker.sock", "--storage-driver=overlay2"]
+    volumes:
+      - dind-socket:/run/heimdall-docker
+      - dind-data:/var/lib/docker
+      # Docker resolves executor bind sources here, at the SAME absolute path.
+      - heimdall-data:/opt/heimdall/data
+    healthcheck:
+      test: [CMD, docker, -H, "unix:///run/heimdall-docker/docker.sock", info]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  dind-socket:
+  dind-data:

@@ -1,0 +1,28 @@
+#!/bin/bash
+# Run a built TS entry (relative to repo dist/...). Missing dist → 127.
+# Clear inherited host proxies before Node and its dependencies initialize.
+export HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= FTP_PROXY=
+export http_proxy= https_proxy= all_proxy= ftp_proxy=
+export NO_PROXY="*" no_proxy="*"
+HERE="$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+ROOT="$(CDPATH= cd -- "$HERE/.." && pwd)"
+export HEIMDALL_REPO_ROOT="${HEIMDALL_REPO_ROOT:-$ROOT}"
+REL="${1:?usage: heimdall-run dist/path.js [args]}"
+shift
+MAIN="$ROOT/$REL"
+if [[ ! -f "$MAIN" ]]; then
+  echo "heimdall-run: missing $MAIN (npm run build)" >&2
+  exit 127
+fi
+_pick_node() {
+  if [[ -n "${HEIMDALL_NODE:-}" ]]; then printf '%s\n' "${HEIMDALL_NODE}"; return; fi
+  local pi n
+  pi="$(command -v pi 2>/dev/null || true)"
+  if [[ -n "${pi}" && -f "${pi}" ]]; then
+    n="$(sed -n 's/^exec "\([^"]*node\)".*/\1/p' "${pi}" | head -n1)"
+    if [[ -n "${n}" && -x "${n}" ]]; then printf '%s\n' "${n}"; return; fi
+  fi
+  command -v node
+}
+NODE="$(_pick_node)"
+exec "${NODE}" "${MAIN}" "$@"

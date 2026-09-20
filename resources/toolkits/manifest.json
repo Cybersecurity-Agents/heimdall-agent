@@ -1,0 +1,16 @@
+{
+  "ad": {
+    "default": true,
+    "installer": "scripts/install/install-ad.sh",
+    "dependencies": ["resources/toolkits/ad/requirements.txt", "resources/toolkits/ad/requirements-pypi.txt"],
+    "netexecSource": "https://github.com/Pennyw0rth/NetExec.git",
+    "netexecRevision": "af9bb8753c30e60be14b78cc1909cf2dbc96fff0"
+  },
+  "chisel": {
+    "default": true,
+    "installer": "scripts/install/install-chisel.sh",
+    "defaultVersion": "1.12.0",
+    "source": "https://github.com/jpillora/chisel/releases",
+    "checksum": "Release checksums verified by installer"
+  }
+}

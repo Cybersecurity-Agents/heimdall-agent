@@ -1,0 +1,131 @@
+{
+  "platform": "linux/amd64",
+  "assets": {
+    "httpx": {
+      "url": "https://github.com/projectdiscovery/httpx/releases/download/v1.12.0/httpx_1.12.0_linux_amd64.zip",
+      "sha256": "9d8439e8b6c9aa7d1e2314817a392e00d5178da3af5652f7475f88868f418f76",
+      "version": "v1.12.0",
+      "source": "https://github.com/projectdiscovery/httpx"
+    },
+    "katana": {
+      "url": "https://github.com/projectdiscovery/katana/releases/download/v1.7.0/katana_1.7.0_linux_amd64.zip",
+      "sha256": "fe1142d92f418549338ea46d67a472124878482e225d279e9a42700c75d76a4d",
+      "version": "v1.7.0",
+      "source": "https://github.com/projectdiscovery/katana"
+    },
+    "nuclei": {
+      "url": "https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_linux_amd64.zip",
+      "sha256": "ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6",
+      "version": "v3.11.1",
+      "source": "https://github.com/projectdiscovery/nuclei"
+    },
+    "subfinder": {
+      "url": "https://github.com/projectdiscovery/subfinder/releases/download/v2.16.0/subfinder_2.16.0_linux_amd64.zip",
+      "sha256": "1b7f9c608e9a5bd59e609a5e09710d63c5485e92d3d49dc2c16eb4fdbe10cb60",
+      "version": "v2.16.0",
+      "source": "https://github.com/projectdiscovery/subfinder"
+    },
+    "ghidra": {
+      "url": "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip",
+      "sha256": "93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54",
+      "version": "Ghidra_12.1.3_build",
+      "source": "https://github.com/NationalSecurityAgency/ghidra"
+    },
+    "jadx": {
+      "url": "https://github.com/skylot/jadx/releases/download/v1.5.6/jadx-1.5.6.zip",
+      "sha256": "545ea2be9c242511bc145755cf4bda2485ade42966e096f8b4d3da2a230e8974",
+      "version": "v1.5.6",
+      "source": "https://github.com/skylot/jadx"
+    },
+    "apktool": {
+      "url": "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar",
+      "sha256": "dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423",
+      "version": "v3.0.3",
+      "source": "https://github.com/iBotPeaches/Apktool"
+    },
+    "radare2": {
+      "url": "https://github.com/radareorg/radare2/releases/download/6.2.2/radare2_6.2.2_amd64.deb",
+      "sha256": "09234e4139bf8dfcbb7fc1fdb2519859ad516e63c19d3c27d92aaecdf463b1ad",
+      "version": "6.2.2",
+      "source": "https://github.com/radareorg/radare2"
+    },
+    "pwndbg": {
+      "url": "https://github.com/pwndbg/pwndbg/releases/download/2026.07.29/pwndbg_2026.07.29_amd64.deb",
+      "sha256": "27030bb5c86e54a386aed88a309a844483fe0ef63e0be28ab7a024e0e627a79b",
+      "version": "2026.07.29",
+      "source": "https://github.com/pwndbg/pwndbg"
+    },
+    "pwninit": {
+      "url": "https://github.com/io12/pwninit/releases/download/3.3.3/pwninit",
+      "sha256": "f124b6645b01b0fc4adacabe61438fe73eef517dc3e4696a08e1250a8f47eec3",
+      "version": "3.3.3",
+      "source": "https://github.com/io12/pwninit"
+    },
+    "jdumpspider": {
+      "url": "https://github.com/whwlsfb/JDumpSpider/releases/download/dev-20250409T071858/JDumpSpider-1.1-SNAPSHOT-full.jar",
+      "sha256": "e8ddd7bb514f6ed0bad60efb1ae9e6f7656620b2d67fc977a3773d8ba5e55d49",
+      "version": "dev-20250409T071858",
+      "source": "https://github.com/whwlsfb/JDumpSpider"
+    },
+    "java8": {
+      "url": "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jre_x64_linux_hotspot_8u504b01.tar.gz",
+      "sha256": "52dcd578baca1d3e449ea86768a9129c0ee04d7b22565695498353cc66940c61",
+      "version": "jdk8u504-b01",
+      "source": "https://adoptium.net/"
+    },
+    "java11": {
+      "url": "https://github.com/adoptium/temurin11-binaries/releases/download/jdk-11.0.32.1%2B1/OpenJDK11U-jre_x64_linux_hotspot_11.0.32.1_1.tar.gz",
+      "sha256": "5eb6cf7f45c623272c64b8e7b4934a8051abb7ae73bfd28488a9856da3f4848a",
+      "version": "jdk-11.0.32.1+1",
+      "source": "https://adoptium.net/"
+    },
+    "one_gadget": {
+      "version": "1.10.0",
+      "url": "https://rubygems.org/downloads/one_gadget-1.10.0.gem",
+      "source": "https://rubygems.org/gems/one_gadget",
+      "sha256": "4bc784a6023f69c24b7b3d78ca2460bbaaea0d2cbb3f67f3c7615cc7f785107c"
+    },
+    "seccomp-tools": {
+      "version": "1.6.2",
+      "url": "https://rubygems.org/downloads/seccomp-tools-1.6.2.gem",
+      "source": "https://rubygems.org/gems/seccomp-tools",
+      "sha256": "c26eb4ac3120f6159773ce1e283f2659225da4a5cb72f6ea9ca6b51fdef622f0"
+    },
+    "rogue-jndi": {
+      "url": "https://codeload.github.com/veracode-research/rogue-jndi/tar.gz/1aa5a5dfc09bfcd7dd50c617a6cd79167d5248d6",
+      "version": "1aa5a5dfc09bfcd7dd50c617a6cd79167d5248d6",
+      "sha256": "6fa3181d80fbdec5db36b9936c6d51adb3a0f2a5cfc7d0b2d1a52507efebdcf4",
+      "source": "https://github.com/veracode-research/rogue-jndi"
+    },
+    "nikto": {
+      "url": "https://codeload.github.com/sullo/nikto/tar.gz/d201dac320fc5187eac75e723dd07a716196ec5a",
+      "version": "d201dac320fc5187eac75e723dd07a716196ec5a",
+      "sha256": "9b8755009a954c684492193ebd956c31ac3261c96ee90bdc2408213cd9930a84",
+      "source": "https://github.com/sullo/nikto"
+    },
+    "nuclei-templates": {
+      "url": "https://codeload.github.com/projectdiscovery/nuclei-templates/tar.gz/e5f19e6144135e107962bb943231413796fd7fe7",
+      "version": "e5f19e6144135e107962bb943231413796fd7fe7",
+      "sha256": "0dc334333848bd189a589247d6f4eed0d0f9cb9956c00cc45c569630817aaf43",
+      "source": "https://github.com/projectdiscovery/nuclei-templates"
+    },
+    "jdumpspider-license": {
+      "version": "dev-20250409T071858",
+      "url": "https://raw.githubusercontent.com/whwlsfb/JDumpSpider/dev-20250409T071858/LICENSE",
+      "source": "https://github.com/whwlsfb/JDumpSpider",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "pwninit-license": {
+      "version": "3.3.3",
+      "url": "https://raw.githubusercontent.com/io12/pwninit/3.3.3/LICENSE",
+      "source": "https://github.com/io12/pwninit",
+      "sha256": "99dce9273c26ee94572b9fe715d449a300dbcc8d5914285cf3cb31110ca92019"
+    },
+    "java21": {
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+      "sha256": "e4446ff06a276155697597cc0f1b15da004ff083f4964a35271ecee567177370",
+      "version": "jdk-21.0.12+8",
+      "source": "https://adoptium.net/"
+    }
+  }
+}

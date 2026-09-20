@@ -1,0 +1,12 @@
+# AD min kit — isolated venv only (see install.sh).
+# Do not pip-install this into the image system Python:
+#   certipy-ad / NetExec pull PyPI `httpx`, which would overwrite
+#   ProjectDiscovery's /usr/local/bin/httpx on heimdall:latest.
+#
+# NetExec is not on PyPI. This one git pin pulls:
+#   nxc / netexec          (CLI)
+#   Impacket               (secretsdump.py, GetUserSPNs.py, …)
+#   Certipy                (CLI `certipy`; Pennyw0rth fork, 3.10+)
+#
+# Bump the commit when you want a newer NetExec.
+netexec @ git+https://github.com/Pennyw0rth/NetExec.git@af9bb8753c30e60be14b78cc1909cf2dbc96fff0

@@ -1,0 +1,33 @@
+#!/bin/bash
+# PATH shadow for bash: block wordlist / wide-range campaigns, then exec real bash.
+# Must not use `#!/usr/bin/env bash`: this file is itself named `bash` on PATH.
+set -u
+HERE="$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+_real_bash() {
+  local hookdir cand part
+  hookdir="${HEIMDALL_WORKSPACE:-/workspace}/.heimdall/hooks"
+  for cand in /bin/bash /usr/bin/bash; do
+    if [[ -x "${cand}" ]]; then
+      printf '%s\n' "${cand}"
+      return 0
+    fi
+  done
+  IFS=':'
+  for part in ${PATH:-}; do
+    [[ -z "${part}" ]] && continue
+    [[ "${part}" == "${hookdir}" ]] && continue
+    cand="${part}/bash"
+    if [[ -x "${cand}" ]] && [[ "$(readlink -f "${cand}" 2>/dev/null || true)" != *heimdall_hook_bash* ]]; then
+      printf '%s\n' "${cand}"
+      return 0
+    fi
+  done
+  printf '%s\n' /bin/bash
+}
+if [[ -f "${HERE}/../../dist/observer/hook-cli.js" ]]; then
+  "${HERE}/../../bin/heimdall-run" dist/observer/hook-cli.js bash "$@" || {
+    rc=$?
+    [[ "${rc}" == "75" ]] && exit 75
+  }
+fi
+exec "$(_real_bash)" "$@"

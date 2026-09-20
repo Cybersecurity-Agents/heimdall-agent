@@ -1,0 +1,49 @@
+#!/usr/bin/python3
+"""TLS front for an existing LDAP service; explicit cert/key, no Java changes."""
+import argparse
+import socket
+import ssl
+import threading
+
+
+def forward(source, target):
+    try:
+        while data := source.recv(65536):
+            target.sendall(data)
+    except OSError:
+        pass
+    finally:
+        try:
+            target.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+
+def serve(client, context, target):
+    try:
+        with context.wrap_socket(client, server_side=True) as tls:
+            with socket.create_connection(target, timeout=15) as upstream:
+                upstream.settimeout(None)
+                worker = threading.Thread(target=forward, args=(tls, upstream), daemon=True)
+                worker.start()
+                forward(upstream, tls)
+                worker.join(timeout=5)
+    except (OSError, ssl.SSLError):
+        client.close()
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--listen', default='0.0.0.0:636')
+parser.add_argument('--to', default='127.0.0.1:1389')
+parser.add_argument('--cert', required=True)
+parser.add_argument('--key', required=True)
+args = parser.parse_args()
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain(args.cert, args.key)
+host, port = args.listen.rsplit(':', 1)
+target_host, target_port = args.to.rsplit(':', 1)
+with socket.create_server((host, int(port))) as server:
+    print(f'ldaps-wrap {args.listen} -> {args.to}', flush=True)
+    while True:
+        client, _ = server.accept()
+        threading.Thread(target=serve, args=(client, context, (target_host, int(target_port))), daemon=True).start()

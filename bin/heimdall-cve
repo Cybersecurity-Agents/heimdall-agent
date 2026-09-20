@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Print CVE yaml dirs, or open CVE-YYYY-NNNNN. Products: grep the dirs.
+HERE="$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+exec python3 "$HERE/../scripts/runtime/heimdall_cve.py" "$@"

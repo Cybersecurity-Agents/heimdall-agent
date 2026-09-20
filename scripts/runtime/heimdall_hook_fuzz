@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Block unguided fuzz CLIs while a LOCK is open (see ≠ obey).
+set -u
+HERE="$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+_name="$(basename "$0")"
+_strip="${HEIMDALL_WORKSPACE:-/workspace}/.heimdall/hooks"
+_PATH_SAVE="$PATH"
+if [[ -n "${_strip}" ]]; then
+  PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -F "${_strip}" | paste -sd: -)"
+  export PATH
+fi
+_real="$(command -v "${_name}" 2>/dev/null || true)"
+export PATH="$_PATH_SAVE"
+if [[ -z "${_real}" || ! -x "${_real}" ]]; then
+  echo "heimdall_hook_fuzz: ${_name} not found on PATH" >&2
+  exit 127
+fi
+case "${_real}" in
+  *heimdall_hook_fuzz*|*${_strip}*)
+    echo "heimdall_hook_fuzz: refusing to re-exec hook at ${_real}" >&2
+    exit 127
+    ;;
+esac
+if [[ -f "${HERE}/../../dist/observer/hook-cli.js" ]] || [[ -f "${HERE}/../../bin/heimdall-run" ]]; then
+  "${HERE}/../../bin/heimdall-run" dist/observer/hook-cli.js tool "${_name}" || {
+    rc=$?
+    [[ "${rc}" == "75" ]] && exit 75
+  }
+fi
+exec "${_real}" "$@"

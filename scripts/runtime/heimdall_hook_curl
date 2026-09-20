@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# PATH shadow for `curl`: stdout is the real binary; map hint goes to stderr.
+set -u
+_real="${HEIMDALL_REAL_CURL:-/usr/bin/curl}"
+if [[ ! -x "${_real}" ]]; then
+  _real="$(command -v -p curl 2>/dev/null || true)"
+fi
+if [[ -z "${_real}" || ! -x "${_real}" ]]; then
+  echo "heimdall_hook_curl: real curl not found" >&2
+  exit 127
+fi
+_args=("$@")
+if [[ "${HEIMDALL_HTTP_MITM:-}" == "1" && -n "${HEIMDALL_MITM_CA:-}" && -f "${HEIMDALL_MITM_CA}" ]]; then
+  _has_ca=0
+  for a in "${_args[@]+"${_args[@]}"}"; do
+    case "$a" in
+      --cacert|--capath|-k|--insecure) _has_ca=1 ;;
+    esac
+  done
+  if [[ "${_has_ca}" -eq 0 ]]; then
+    _args=(--cacert "${HEIMDALL_MITM_CA}" "${_args[@]+"${_args[@]}"}")
+  fi
+fi
+"${_real}" "${_args[@]+"${_args[@]}"}"
+_rc=$?
+# Default OFF: agents often `curl … 2>&1` and would parse the map as HTTP.
+if [[ "${HEIMDALL_HOOK_HINT:-}" == "1" ]] && [[ -f "${HEIMDALL_WORKSPACE:-/workspace}/hint.txt" ]]; then
+  echo "PLATFORM HINT:" >&2
+  head -n 20 "${HEIMDALL_WORKSPACE:-/workspace}/hint.txt" >&2 || true
+fi
+exit "${_rc}"

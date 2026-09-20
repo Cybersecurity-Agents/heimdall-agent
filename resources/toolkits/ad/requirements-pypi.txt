@@ -1,0 +1,5 @@
+# Fallback when NetExec git install fails (no rust / no github).
+# Bookworm python3.11: certipy-ad 5.x on PyPI needs >=3.12, so pin 4.8.2.
+# nxc is absent in this fallback.
+impacket==0.13.1
+certipy-ad==4.8.2
