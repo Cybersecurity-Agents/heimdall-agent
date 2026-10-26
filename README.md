@@ -100,6 +100,15 @@ Requirements: **Docker Engine / Docker Desktop** and **Docker Compose ≥ 2.24.4
 
 The current image has been built and tested end to end on Ubuntu (`linux/amd64`). If you encounter issues on another environment, please open an issue.
 
+Install the prebuilt offline image from [GitHub Releases](https://github.com/QiantangCredit/heimdall-agent/releases/latest):
+
+```bash
+curl -fL https://github.com/QiantangCredit/heimdall-agent/releases/latest/download/download-install.sh -o download-install.sh
+bash download-install.sh
+```
+
+The installer downloads two parts, verifies SHA-256 checksums, assembles the offline archive, and starts Docker Compose. To use another port, run `HEIMDALL_PORT=8701 bash download-install.sh`. Installation files are kept in `./heimdall-offline`; model credentials start empty. For manual or air-gapped installation, see the [offline deployment guide](deploy/offline/README.md).
+
 Build from source:
 
 ```bash
