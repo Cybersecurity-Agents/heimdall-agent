@@ -46,6 +46,10 @@ def main() -> int:
                 continue
             cid = cmd.get("id")
             typ = cmd.get("type")
+            command_log = os.environ.get("FAKE_PI_COMMAND_LOG")
+            if command_log:
+                with open(command_log, "a", encoding="utf-8") as log:
+                    log.write(json.dumps(cmd) + "\n")
             if typ == "prompt":
                 n += 1
                 emit({"id": cid, "type": "response", "command": "prompt", "success": True})

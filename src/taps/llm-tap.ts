@@ -32,7 +32,7 @@ const RESP_SKIP = new Set(["transfer-encoding", "connection", "content-length"])
 
 function isMessagesPost(path: string): boolean {
   const raw = (path || "").split("?", 1)[0]!.replace(/\/+$/, "") || "/";
-  return raw === "/v1/messages" || raw.endsWith("/chat/completions") || raw === "/chat/completions";
+  return /\/(messages|chat\/completions|responses)$/.test(raw);
 }
 
 function upstreamPath(upstream: string, reqPath: string): string {
@@ -215,10 +215,11 @@ export function startLlmTap(opts: {
         }
         if (injectOn && method === "POST" && isMessagesPost(url)) {
           try {
+            const format = /\/responses\/?(?:\?|$)/.test(url) ? "responses" : url.includes("/chat/completions") ? "chat" : "anthropic";
             const map = composeInjectBlob(opts.workspace);
-            body = Buffer.from(injectMapIntoMessages(body, map));
+            body = Buffer.from(injectMapIntoMessages(body, map, format));
             const brief = composeBriefBlob(opts.workspace);
-            body = Buffer.from(injectBriefIntoMessages(body, brief));
+            body = Buffer.from(injectBriefIntoMessages(body, brief, format));
             injected = requestHasRealInject(body, "map") || requestHasRealInject(body, "brief");
             logLlm(opts.workspace, { ts: Date.now() / 1000, path: url, injected });
           } catch {

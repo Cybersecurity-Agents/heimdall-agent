@@ -5,11 +5,14 @@ printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Tim
 # The first public full image is amd64: x86 pwn needs 32-bit libc and multilib.
 test "$(dpkg --print-architecture)" = amd64
 dpkg --add-architecture i386
+mirror="${HEIMDALL_APT_MIRROR:-http://deb.debian.org}"
+[[ "$mirror" =~ ^https?://[a-zA-Z0-9.-]+(:[0-9]+)?$ ]] || { echo 'Invalid HEIMDALL_APT_MIRROR' >&2; exit 1; }
+sed -i "s|http://deb.debian.org|$mirror|g" /etc/apt/sources.list.d/debian.sources
 apt-get update --error-on=any
 # node:bookworm-slim does not include the system CA bundle. Bootstrap it from
 # Debian's signed repository before using HTTPS for the remaining packages.
 apt-get install -y --no-install-recommends ca-certificates
-sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources
+sed -i 's|http://|https://|g' /etc/apt/sources.list.d/debian.sources
 apt-get install -y --no-install-recommends \
   bash ca-certificates tzdata curl wget git openssh-client \
   coreutils findutils grep sed gawk tar gzip xz-utils unzip zip p7zip-full \

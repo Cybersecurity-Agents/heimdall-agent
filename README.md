@@ -4,6 +4,8 @@
 
 <h1 align="center">Heimdall</h1>
 
+See [model settings](docs/model-settings.md) for capability profiles, reasoning effort, context limits and compaction controls. The existing single-model Solver / Loop execution paths are preserved. For a portable Docker image with a one-command installer, see [offline deployment](deploy/offline/README.md).
+
 <p align="center">
   <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
 </p>

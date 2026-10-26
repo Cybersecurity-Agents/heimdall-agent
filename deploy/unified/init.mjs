@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
+import { LLM_OPTION_SUFFIXES, resolveLlmApi } from '../../dist/shared/llm-options.js';
 
 const root = process.env.HEIMDALL_REPO_ROOT || '/opt/heimdall';
 const data = process.env.HEIMDALL_DATA_DIR || join(root, 'data');
@@ -29,13 +30,16 @@ if (!existsSync(toolsPath)) {
     HEIMDALL_LLM_BASE_URL: url, OPENAI_BASE_URL: url, ANTHROPIC_BASE_URL: url,
     HEIMDALL_AGENT_MODEL: model, OPENAI_MODEL: model, ANTHROPIC_MODEL: model,
   });
-  if (env.HEIMDALL_LLM_API) tools.claude.HEIMDALL_LLM_API = env.HEIMDALL_LLM_API;
-  else if (env.OPENAI_BASE_URL && !/\/anthropic|api\.anthropic\.com|\/messages\/?$/i.test(url)) {
-    tools.claude.HEIMDALL_LLM_API = 'openai';
+  tools.claude.HEIMDALL_LLM_API = resolveLlmApi(url, env.HEIMDALL_LLM_API || (url ? '' : tools.claude.HEIMDALL_LLM_API));
+  for (const [section, prefix] of [['claude', 'HEIMDALL_'], ['loop', 'HEIMDALL_LOOP_']]) {
+    for (const suffix of LLM_OPTION_SUFFIXES) {
+      const name = prefix + suffix;
+      if (env[name]?.trim()) tools[section][name] = env[name];
+    }
   }
   tools.coach.HEIMDALL_COACH_API = tools.claude.HEIMDALL_LLM_API;
   if (!env.HEIMDALL_LOOP_BASE_URL) tools.loop.HEIMDALL_LOOP_API = tools.claude.HEIMDALL_LLM_API;
-  for (const name of ['HEIMDALL_LOOP_API_KEY', 'HEIMDALL_LOOP_BASE_URL', 'HEIMDALL_LOOP_MODEL']) {
+  for (const name of ['HEIMDALL_LOOP_API_KEY', 'HEIMDALL_LOOP_AUTH_TOKEN', 'HEIMDALL_LOOP_BASE_URL', 'HEIMDALL_LOOP_MODEL', 'HEIMDALL_LOOP_API', 'HEIMDALL_LOOP_PROVIDER']) {
     if (env[name]) tools.loop[name] = env[name];
   }
   writeFileSync(toolsPath, stringify(tools), { mode: 0o600, flag: 'wx' });

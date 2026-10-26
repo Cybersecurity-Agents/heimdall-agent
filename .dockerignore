@@ -52,3 +52,6 @@ resources/wordlists/*
 !.env.example
 **/*.sfdisk
 heimdall-backup*/
+
+.runtime
+.asset-cache

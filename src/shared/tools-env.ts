@@ -1,6 +1,36 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { LLM_OPTION_SUFFIXES } from "./llm-options.js";
+
+// Only model configuration is inherited by Docker executors. Do not copy host
+// runtime controls, proxy settings or unrelated credentials into tools_env.
+const MODEL_ENV_KEYS = new Set([
+  "HEIMDALL_AGENT_MODEL", "HEIMDALL_SMALL_MODEL",
+  ...["HEIMDALL_LLM_", "ANTHROPIC_", "OPENAI_"].flatMap(prefix =>
+    ["BASE_URL", "API_KEY", "AUTH_TOKEN", "MODEL", "API", "PROVIDER"].map(key => prefix + key)),
+  ...LLM_OPTION_SUFFIXES.map(key => "HEIMDALL_" + key),
+  ...["LOOP", "COACH"]
+    .flatMap(role => ["BASE_URL", "API_KEY", "AUTH_TOKEN", "MODEL", "API", "PROVIDER", "SMALL_MODEL", ...LLM_OPTION_SUFFIXES]
+      .map(key => `HEIMDALL_${role}_${key}`)),
+]);
+
+/** Normalize each configuration layer before merging so saved canonical fields
+ * override environment aliases. */
+function normalizeModelAliases(values: Record<string, string>): Record<string, string> {
+  const out = { ...values };
+  // A saved ANTHROPIC_* alias must override the corresponding HEIMDALL_* env
+  // value too, otherwise Pi and SDK can select different primary connections.
+  for (const names of [
+    ["HEIMDALL_LLM_BASE_URL", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"],
+    ["HEIMDALL_LLM_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+    ["HEIMDALL_AGENT_MODEL", "OPENAI_MODEL", "ANTHROPIC_MODEL"],
+  ]) {
+    const value = names.map(name => values[name]).find(value => value?.trim());
+    if (value) for (const name of names) out[name] = value;
+  }
+  return out;
+}
 
 const PLACEHOLDER = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
 
@@ -66,7 +96,7 @@ export function defaultToolsEnvPath(repoRoot: string): string {
   return join(repoRoot, "tools.env.yaml");
 }
 
-export function loadToolsEnv(path: string): ToolsEnv {
+export function loadToolsEnv(path: string, inherited: NodeJS.ProcessEnv = {}): ToolsEnv {
   let values: Record<string, string> = {};
   if (existsSync(path)) {
     try {
@@ -76,6 +106,11 @@ export function loadToolsEnv(path: string): ToolsEnv {
       values = {};
     }
   }
+  const modelEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(inherited)) {
+    if (MODEL_ENV_KEYS.has(key)) put(modelEnv, key, value);
+  }
+  values = { ...normalizeModelAliases(modelEnv), ...normalizeModelAliases(values) };
   return {
     path,
     values,

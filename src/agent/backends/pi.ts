@@ -1,15 +1,14 @@
+import { startLlmAdapter, type LlmAdapterProxy } from "../../shared/llm-request-adapter.js";
+import { resolveLlmOptions, piCompaction, type LlmOptions } from "../../shared/llm-options.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  COMPACT_THRESHOLD,
   firstLlmKey,
   piAgentDir,
   resolveModelId,
   resolveProvider,
-  resolveThinking,
   seedPiWorkspace,
   SOLVER_TOOLS,
-  type ThinkingLevel,
 } from "../../shared/pi-workspace.js";
 import { saveSession } from "../../shared/session.js";
 import type { AgentRunResult, Backend, BackendRunOpts } from "./types.js";
@@ -66,8 +65,10 @@ export async function loadPiResources(
 
 export class PiBackend implements Backend {
   name = "pi";
+  private adapter: LlmAdapterProxy | null = null;
   private session: SessionLike | null = null;
   private dead = false;
+  private tuning: LlmOptions | null = null;
   private unsub: (() => void) | null = null;
   constructor(
     readonly opts: {
@@ -90,10 +91,13 @@ export class PiBackend implements Backend {
       /* ignore */
     }
     this.session = null;
+    await this.adapter?.close();
+    this.adapter = null;
     this.dead = false;
   }
 
-  async maybeCompact(threshold = COMPACT_THRESHOLD): Promise<boolean> {
+  async maybeCompact(threshold = this.tuning?.compactPct ?? 70): Promise<boolean> {
+    if (!this.tuning?.compactEnabled) return false;
     const session = this.session;
     if (!session || this.dead) return false;
     try {
@@ -110,6 +114,8 @@ export class PiBackend implements Backend {
   async run(opts: BackendRunOpts): Promise<AgentRunResult> {
     const { workspace, systemPrompt, userPrompt, model, events, maxTurns } = opts;
     opts.signal?.throwIfAborted();
+    try { this.tuning = resolveLlmOptions(process.env, resolveModelId(model), "pi"); }
+    catch (error) { return { backend: this.name, ok: false, exitCode: 2, retryable: false, error: String(error) }; }
     if (!this.opts.skipWorkspaceSeed) {
       try {
         seedPiWorkspace(workspace, { systemPrompt, model });
@@ -121,6 +127,7 @@ export class PiBackend implements Backend {
     try {
       await this.ensureSession(opts);
     } catch (e) {
+      await this.close();
       const msg = `${(e as Error).name || "Error"}: ${(e as Error).message || e}`;
       events.emit("pi_error", { error: msg });
       events.writeText(`[pi] error: ${msg}`);
@@ -154,6 +161,7 @@ export class PiBackend implements Backend {
       session_id: session.sessionId,
       session_file: session.sessionFile,
       transport: "sdk",
+      effective_config: this.tuning,
     });
 
     const stats = { turns: 0, tools: 0, messages: 0, error: null as string | null, stopReason: "" };
@@ -242,6 +250,7 @@ export class PiBackend implements Backend {
       error: stats.error,
       stop_reason: stats.error ? "error" : aborted ? "turn_limit" : stats.stopReason,
       transport: "sdk",
+      effective_config: this.tuning,
     });
     return {
       backend: this.name,
@@ -287,7 +296,8 @@ export class PiBackend implements Backend {
     const sessionsDir = join(agentDir, "sessions");
     const modelId = resolveModelId(model);
     const provider = resolveProvider();
-    const thinking = resolveThinking() as ThinkingLevel;
+    const tuning = resolveLlmOptions(process.env, modelId, "pi");
+    const thinking = tuning.thinking;
 
     const modelRuntime = await ModelRuntime.create({
       authPath: join(agentDir, "auth.json"),
@@ -307,6 +317,10 @@ export class PiBackend implements Backend {
     const { resourceLoader, settingsManager } = await loadPiResources(
       workspace, agentDir, systemPrompt, Boolean(this.opts.noContextFiles), Boolean(this.opts.noSkills),
     );
+    settingsManager.applyOverrides({
+      compaction: piCompaction(tuning),
+      ...(tuning.explicitBudget ? { thinkingBudgets: { minimal: tuning.thinkingBudget, low: tuning.thinkingBudget, medium: tuning.thinkingBudget, high: tuning.thinkingBudget } } : {}),
+    });
     const tools = this.opts.tools?.length ? this.opts.tools : [...SOLVER_TOOLS];
 
     let sessionManager;
@@ -327,6 +341,8 @@ export class PiBackend implements Backend {
       `[pi] sdk createAgentSession provider=${provider} model=${modelId} thinking=${thinking} tools=${tools.join(",")}`,
     );
 
+    if (!found) throw new Error(`Configured model not found: ${modelId}`);
+    this.adapter = await startLlmAdapter(found.baseUrl, tuning);
     const { session } = await createAgentSession({
       cwd: workspace,
       agentDir,
@@ -337,7 +353,7 @@ export class PiBackend implements Backend {
       thinkingLevel: thinking,
       tools,
       customTools: this.opts.customTools?.(workspace),
-      ...(found ? { model: found } : {}),
+      model: { ...found, baseUrl: this.adapter.baseUrl },
     });
     this.session = session as unknown as SessionLike;
     this.dead = false;

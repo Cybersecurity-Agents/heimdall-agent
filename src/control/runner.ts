@@ -1,3 +1,4 @@
+import { snapshotCapabilities } from "./capability-catalog.js";
 import { randomUUID } from "node:crypto";
 import { ownLocalProcess, processIdentity, recordLocalProcess, signalOwnedProcesses, stopPersistedLocal } from "./local-process.js";
 import { snapshotConsolePrompts } from "./prompt-snapshot.js";
@@ -172,6 +173,7 @@ function buildEnv(cfg: Config, spec: RunSpec): Record<string, string> {
   env.HEIMDALL_CAPTURE_LOG = "1";
   if (!cfg.observe_enabled) env.HEIMDALL_COACH = "0";
   clearProxyEnv(env);
+  snapshotCapabilities(cfg, spec.workspace, env);
   applyLoopLlmEnv(env);
   syncLlmEnv(env);
   const pathParts = [

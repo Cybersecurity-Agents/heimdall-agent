@@ -4,6 +4,8 @@
 
 <h1 align="center">Heimdall</h1>
 
+模型配置、推理档位及上下文参数见 [模型设置](docs/model-settings.md)。支持按模型能力映射实际请求参数，并在操作台查看生效配置；仍保留单模型 Solver / Loop 执行方式。Docker 离线一键部署与镜像打包见 [部署说明](deploy/offline/README.md)。
+
 <p align="center">
   <a href="README.md">English</a> · <strong>简体中文</strong>
 </p>

@@ -1,8 +1,11 @@
+import { XAI_HOSTS } from "../../shared/grok-catalog.js";
+import { catalogEnv, readCatalogState } from "../capability-catalog.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { Config } from "../../shared/config.js";
 import { atomicWrite } from "../../shared/fsutil.js";
+import { applyLoopOptions, llmOptionKeys, resolveLlmOptions, SdkEndpointError } from "../../shared/llm-options.js";
 
 export const GROUPS: Record<string, string[]> = {
   solver: [
@@ -11,19 +14,20 @@ export const GROUPS: Record<string, string[]> = {
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "HEIMDALL_AGENT_MODEL",
-    "HEIMDALL_THINKING",
+    ...llmOptionKeys(),
+    "HEIMDALL_LLM_API",
   ],
   loop: [
     "HEIMDALL_LOOP_BASE_URL",
     "HEIMDALL_LOOP_MODEL",
     "HEIMDALL_LOOP_API_KEY",
     "HEIMDALL_LOOP_AUTH_TOKEN",
-    "HEIMDALL_LOOP_THINKING",
+    ...llmOptionKeys(true),
   ],
   coach: ["HEIMDALL_COACH_BASE_URL", "HEIMDALL_COACH_MODEL", "HEIMDALL_COACH_API_KEY", "HEIMDALL_COACH"],
 };
 
-const SECRET_SUFFIX = ["KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH"];
+const isSecret = (key: string) => /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|AUTH)$/.test(key.toUpperCase());
 
 const OVERLAY_FILES: Record<string, string> = {
   "solver-protocol": "system_prompt.md",
@@ -33,6 +37,7 @@ const OVERLAY_FILES: Record<string, string> = {
 
 function providerFromUrl(url: string): string {
   const u = (url || "").toLowerCase();
+  try { if ((XAI_HOSTS as readonly string[]).includes(new URL(url).hostname)) return "xai"; } catch { /* unset URL */ }
   if (u.includes("deepseek")) return "deepseek";
   if (u.includes("moonshot") || u.includes("kimi")) return "moonshot";
   if (u.includes("anthropic.com") && !u.includes("tsecbench")) return "anthropic";
@@ -59,8 +64,6 @@ export function syncPiAgentAliases(values: Record<string, string>): void {
     }
     const prov = providerFromUrl(url);
     if (prov) values.HEIMDALL_LLM_PROVIDER = prov;
-    const api = apiFromUrl(url);
-    if (api) values.HEIMDALL_LLM_API = api;
   }
   if (key) {
     for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "HEIMDALL_LLM_API_KEY"]) {
@@ -137,9 +140,25 @@ function valuesOf(cfg: Config): Record<string, string> {
 
 function redact(key: string, value: string): string {
   if (!value) return "";
-  if (!SECRET_SUFFIX.some((s) => key.toUpperCase().includes(s))) return value;
+  if (!isSecret(key)) return value;
   if (value.length <= 8) return "••••";
   return `••••${value.slice(-4)}`;
+}
+
+export function effectiveOptions(values: Record<string, string>) {
+  const solverModel = values.ANTHROPIC_MODEL || values.HEIMDALL_AGENT_MODEL || values.OPENAI_MODEL || "";
+
+  const loop = { ...values };
+  applyLoopOptions(loop);
+  loop.HEIMDALL_LLM_UPSTREAM = values.HEIMDALL_LOOP_BASE_URL || values.HEIMDALL_LLM_UPSTREAM || values.ANTHROPIC_BASE_URL || "";
+  const solver = resolveLlmOptions(values, solverModel.trim(), "pi");
+  try {
+    return { solver, loop: resolveLlmOptions(loop, (values.HEIMDALL_LOOP_MODEL || solverModel).trim(), "sdk") };
+  } catch (error) {
+    // An unconfigured Claude slot must not prevent saving a valid native Pi endpoint.
+    if (!(error instanceof SdkEndpointError) || values.HEIMDALL_LOOP_BASE_URL?.trim() || values.HEIMDALL_LOOP_MODEL?.trim()) throw error;
+    return { solver, loop: null, loop_error: (error as Error).message };
+  }
 }
 
 export function snapshot(cfg: Config): Record<string, unknown> {
@@ -149,7 +168,7 @@ export function snapshot(cfg: Config): Record<string, unknown> {
     const block: Record<string, unknown> = {};
     for (const key of keys) {
       const val = vals[key] || "";
-      const secret = SECRET_SUFFIX.some((s) => key.toUpperCase().includes(s));
+      const secret = isSecret(key);
       block[key] = {
         set: Boolean(val.trim()),
         value: secret ? "" : val,
@@ -158,6 +177,10 @@ export function snapshot(cfg: Config): Record<string, unknown> {
     }
     out[group] = block;
   }
+  try { out.effective = effectiveOptions({ ...vals, ...catalogEnv(cfg) });
+    const state = readCatalogState(cfg);
+    out.catalog = { version: state.active.version, source: state.source, profiles: Object.keys(state.active.profiles), history: state.history.map(c => c.version) }; }
+  catch (error) { out.validation_error = String((error as Error).message); }
   return out;
 }
 
@@ -195,15 +218,17 @@ export function applyPayload(cfg: Config, payload: unknown): Record<string, unkn
       current = {};
     }
   }
+  const next = { ...cfg.tools_env.values };
   for (const [key, raw] of Object.entries(payload as Record<string, unknown>)) {
     if (!allowed.has(key) || raw == null) continue;
     const text = String(raw);
-    const secret = SECRET_SUFFIX.some((s) => key.toUpperCase().includes(s));
+    const secret = isSecret(key);
     if (secret && (!text.trim() || text.startsWith("••••"))) continue;
-    cfg.tools_env.values[key] = text;
+    next[key] = text;
     current[key] = text;
   }
-  syncPiAgentAliases(cfg.tools_env.values);
+  syncPiAgentAliases(next);
+  effectiveOptions({ ...next, ...catalogEnv(cfg) }); // Validate the complete candidate before changing memory or disk.
   for (const name of [
     "ANTHROPIC_AUTH_TOKEN",
     "HEIMDALL_LLM_API_KEY",
@@ -222,9 +247,10 @@ export function applyPayload(cfg: Config, payload: unknown): Record<string, unkn
     "HEIMDALL_COACH_PROVIDER",
     "HEIMDALL_COACH_API",
   ]) {
-    if (name in cfg.tools_env.values) current[name] = cfg.tools_env.values[name];
+    if (name in next) current[name] = next[name];
   }
   atomicWrite(path, stringifyYaml(current, { sortMapEntries: true }));
+  Object.assign(cfg.tools_env.values, next);
   return snapshot(cfg);
 }
 

@@ -10,7 +10,8 @@ try {
   execFileSync(process.execPath, [join(root, 'scripts/build/stage.mjs'), release, '--console']);
   symlinkSync(join(root, 'node_modules'), join(release, 'node_modules'), 'dir');
   if (existsSync(join(release, 'src'))) throw new Error('Release unexpectedly includes src');
-  const env = { PATH: process.env.PATH, HEIMDALL_NODE: process.execPath, HEIMDALL_REPO_ROOT: release, PI_OFFLINE: '1' };
+  const isolatedHome = join(temporary, 'home'); mkdirSync(isolatedHome);
+  const env = { PATH: process.env.PATH, HOME: isolatedHome, HEIMDALL_NODE: process.execPath, HEIMDALL_REPO_ROOT: release, PI_OFFLINE: '1' };
   const script = `
     import assert from 'node:assert/strict';
     import { readFileSync } from 'node:fs';

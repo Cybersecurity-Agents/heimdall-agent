@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -100,7 +101,7 @@ export function extractUsage(obj: unknown): UsageCounts | null {
   let usage: Record<string, unknown> | null = rec.usage && typeof rec.usage === "object" && !Array.isArray(rec.usage)
     ? (rec.usage as Record<string, unknown>)
     : null;
-  const msg = rec.message;
+  const msg = rec.message || rec.response;
   if (!usage && msg && typeof msg === "object" && !Array.isArray(msg)) {
     const nested = (msg as Record<string, unknown>).usage;
     if (nested && typeof nested === "object" && !Array.isArray(nested)) usage = nested as Record<string, unknown>;
@@ -110,7 +111,7 @@ export function extractUsage(obj: unknown): UsageCounts | null {
     if (keys.some((k) => k in rec)) usage = rec;
   }
   if (!usage) return null;
-  const details = usage.prompt_tokens_details;
+  const details = usage.prompt_tokens_details || usage.input_tokens_details;
   const cacheRead =
     asNonNeg(usage.cache_read_input_tokens) ||
     asNonNeg(usage.cache_read_tokens) ||
@@ -126,6 +127,8 @@ export function extractUsage(obj: unknown): UsageCounts | null {
     asNonNeg(usage.cache_write_tokens) ||
     asNonNeg(usage.cacheWrite);
   let input = asNonNeg(usage.input_tokens) || asNonNeg(usage.input);
+  // Responses input_tokens includes cached tokens; Anthropic input_tokens does not.
+  if (usage.input_tokens_details && input >= cacheRead) input -= cacheRead;
   const prompt = asNonNeg(usage.prompt_tokens);
   if (!input && prompt) input = prompt >= cacheRead ? prompt - cacheRead : prompt;
   const output = asNonNeg(usage.output_tokens) || asNonNeg(usage.completion_tokens) || asNonNeg(usage.output);
@@ -185,6 +188,7 @@ export function scanUsageText(text: string): UsageCounts | null {
 
 /** Incremental SSE/JSON scanner. Does not keep the full response. */
 export class UsageScanner {
+  private decoder = new StringDecoder("utf8");
   private buf = "";
   usage: UsageCounts = emptyUsage();
   found = false;
@@ -193,7 +197,7 @@ export class UsageScanner {
     if (chunk == null) return;
     if (typeof chunk !== "string" && chunk.length === 0) return;
     if (typeof chunk === "string" && !chunk) return;
-    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    const text = typeof chunk === "string" ? chunk : this.decoder.write(Buffer.from(chunk));
     this.buf += text;
     this.drain();
     if (this.buf.length > 256_000) this.buf = this.buf.slice(-64_000);
@@ -249,6 +253,8 @@ export class UsageScanner {
   }
 
   finish(): UsageCounts {
+    this.buf += this.decoder.end();
+    this.decoder = new StringDecoder("utf8");
     this.drain();
     const leftover = this.buf.trim();
     if (leftover) {

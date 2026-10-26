@@ -1,3 +1,4 @@
+import { snapshotCapabilities } from "./capability-catalog.js";
 import { runtimeLayout } from "../shared/resources.js";
 import { clearProxyEnv } from "../shared/network-env.js";
 import { snapshotConsolePrompts } from "./prompt-snapshot.js";
@@ -121,6 +122,7 @@ function dockerEnv(cfg: Config, spec: RunSpec): Record<string, string> {
     env.HEIMDALL_DISABLE_HTTP_TAP = "1";
     env.HEIMDALL_DISABLE_LLM_TAP = "1";
   }
+  snapshotCapabilities(cfg, spec.workspace, env);
   applyLoopLlmEnv(env);
   syncLlmEnv(env);
   return env;

@@ -1,14 +1,19 @@
+import { CapabilityCatalog, type CatalogSummary } from "../components/CapabilityCatalog";
 import { useEffect, useRef, useState } from "react";
 import { Button, Form, Input, Radio } from "antd";
 import { useDesk } from "../store";
 import { api } from "../api";
 import { CLOCK_KEYS } from "../lib/workspace";
+import { LlmTuning, TUNING_SUFFIXES, type EffectiveLlmOptions } from "../components/LlmTuning";
 import { Flash } from "../components/Flash";
 
 export function SettingsPage() {
   const { t, lang, setLang, settings, llm, platform, vpn, flash, setFlash, loadSettings, loadVpn } = useDesk();
   const [clocks, setClocks] = useState<Record<string, string>>({});
-  const [solver, setSolver] = useState({ url: "", model: "", key: "", think: "" });
+  const [solver, setSolver] = useState({ url: "", model: "", key: "" });
+  const [tuning, setTuning] = useState<Record<string, string>>({});
+  const [savingModels, setSavingModels] = useState(false);
+  const [modelError, setModelError] = useState("");
   const [loop, setLoop] = useState({ url: "", model: "", key: "" });
   const [plat, setPlat] = useState({ url: "", token: "" });
   const fileRef = useRef<HTMLInputElement>(null);
@@ -30,8 +35,17 @@ export function SettingsPage() {
       url: g("solver", "ANTHROPIC_BASE_URL").value || "",
       model: g("solver", "ANTHROPIC_MODEL").value || "",
       key: "",
-      think: g("solver", "HEIMDALL_THINKING").value || "",
     });
+    const tuningValues: Record<string, string> = {};
+    for (const group of ["solver", "loop"]) {
+      for (const suffix of TUNING_SUFFIXES) {
+        const key = `HEIMDALL_${group === "loop" ? "LOOP_" : ""}${suffix}`;
+        tuningValues[key] = g(group, key).value || "";
+      }
+    }
+    const protocol = g("solver", "HEIMDALL_LLM_API").value || "";
+    tuningValues.HEIMDALL_LLM_API = protocol.includes("responses") ? "responses" : protocol.includes("anthropic") ? "anthropic" : protocol.includes("openai") ? "openai" : "";
+    setTuning(tuningValues);
     setLoop({
       url: g("loop", "HEIMDALL_LOOP_BASE_URL").value || "",
       model: g("loop", "HEIMDALL_LOOP_MODEL").value || "",
@@ -49,6 +63,13 @@ export function SettingsPage() {
     return () => window.clearInterval(id);
   }, [loadVpn]);
 
+  const changeTuning = (key: string, value: string) => setTuning(previous => ({
+    ...previous, [key]: value,
+    ...(key.endsWith("CAPABILITY_PROFILE") ? Object.fromEntries(["THINKING_MODE", "THINKING_BUDGET", "REASONING"].map(suffix => [key.replace("CAPABILITY_PROFILE", suffix), ""])) : {}),
+    ...(key === "HEIMDALL_LOOP_THINKING_MODE" && value !== "enabled" ? { HEIMDALL_LOOP_THINKING_BUDGET: "" } : {}),
+  }));
+  const catalog = llm.catalog as CatalogSummary | undefined;
+  const effective = llm.effective as { solver?: EffectiveLlmOptions; loop?: EffectiveLlmOptions; loop_error?: string } | undefined;
   const runtime = String(settings.agent_runtime || "local");
   const capabilities = settings.runtime_capabilities as Record<string, { available: boolean; reason: string }> | undefined;
   const p = platform as { token_preview?: string; default_base_url?: string };
@@ -190,19 +211,32 @@ export function SettingsPage() {
         const payload: Record<string, string> = {
           ANTHROPIC_BASE_URL: solver.url,
           ANTHROPIC_MODEL: solver.model,
-          HEIMDALL_THINKING: solver.think,
+          ...tuning,
           HEIMDALL_LOOP_BASE_URL: loop.url,
           HEIMDALL_LOOP_MODEL: loop.model,
         };
         if (solver.key.trim()) payload.ANTHROPIC_API_KEY = solver.key.trim();
         if (loop.key.trim()) payload.HEIMDALL_LOOP_API_KEY = loop.key.trim();
-        const rec = await api<{ ok?: boolean; error?: string }>("/api/settings", { method: "POST", body: JSON.stringify({ llm: payload }) });
-        if (rec.ok) {
-          setSolver((s) => ({ ...s, key: "" }));
-          setLoop((s) => ({ ...s, key: "" }));
-          setFlash("settings", t("modelsSaved"), "ok");
-          await loadSettings();
-        } else setFlash("settings", rec.error || t("saveModelsFail"), "bad");
+        setSavingModels(true);
+        setModelError("");
+        try {
+          const rec = await api<{ ok?: boolean; error?: string }>("/api/settings", { method: "POST", body: JSON.stringify({ llm: payload }) });
+          if (rec.ok) {
+            setSolver((s) => ({ ...s, key: "" }));
+            setLoop((s) => ({ ...s, key: "" }));
+            setFlash("settings", t("modelsSaved"), "ok");
+            await loadSettings();
+          } else {
+            const message = rec.error || t("saveModelsFail");
+            setModelError(message);
+            setFlash("settings", message, "bad");
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setModelError(message);
+          setFlash("settings", message, "bad");
+        }
+        finally { setSavingModels(false); }
       }}>
         <header className="sheet-head">
           <h3>{t("llmTitle")}</h3>
@@ -225,12 +259,8 @@ export function SettingsPage() {
               <Input.Password value={solver.key} placeholder={solverPeek?.preview || t("keyUnchanged")} onChange={(e) => setSolver((s) => ({ ...s, key: e.target.value }))} />
               <p className="help">{t("solverKeyHelp")}</p>
             </div>
-            <div className="field">
-              <label>{t("thinking")}</label>
-              <Input placeholder="high" spellCheck={false} value={solver.think} onChange={(e) => setSolver((s) => ({ ...s, think: e.target.value }))} />
-              <p className="help">{t("thinkingHelp")}</p>
-            </div>
           </div>
+          <LlmTuning profiles={catalog?.profiles} loop={false} values={tuning} onChange={changeTuning} effective={effective?.solver} model={solver.model} t={t} />
         </div>
         <div className="subsheet">
           <header className="subsheet-head">
@@ -246,9 +276,15 @@ export function SettingsPage() {
               <p className="help">{t("loopKeyHelp")}</p>
             </div>
           </div>
+          {effective?.loop_error && <p className="note">{effective.loop_error}</p>}
+          <LlmTuning profiles={catalog?.profiles} loop values={tuning} onChange={changeTuning} effective={effective?.loop} model={loop.model || solver.model} t={t} />
+          <CapabilityCatalog catalog={catalog} reload={loadSettings} t={t} />
         </div>
+        <p className="help">{t("llmApplyHelp")}</p>
+        {modelError && <p className="flash bad" role="alert">{modelError}</p>}
+        {typeof llm.validation_error === "string" && <p role="alert">{llm.validation_error}</p>}
         <div className="sheet-foot">
-          <Button type="primary" htmlType="submit">{t("saveModels")}</Button>
+          <Button type="primary" htmlType="submit" loading={savingModels}>{t("saveModels")}</Button>
         </div>
       </form>
 

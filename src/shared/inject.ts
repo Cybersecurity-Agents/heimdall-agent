@@ -200,22 +200,64 @@ function injectBlock(raw: Buffer, blob: string | null, open: string, _close: str
   }
 }
 
-export function injectMapIntoMessages(raw: Buffer, blob: string | null): Buffer {
-  return injectBlock(raw, blob, INJECT_MARKER, INJECT_CLOSE);
+export type LlmRequestFormat = "anthropic" | "chat" | "responses";
+
+/** Edit only instruction text. Leave encrypted reasoning, tool calls and images untouched. */
+function injectOtherFormat(raw: Buffer, blob: string | null, kind: string, format: LlmRequestFormat): Buffer {
+  if (!blob && kind !== "map") return raw;
+  try {
+    const doc = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
+    const field = format === "responses" ? "input" : "messages";
+    const original = doc[field];
+    const messages: Record<string, unknown>[] = Array.isArray(original) ? original : typeof original === "string" ? [{ role: "user", content: original }] : [];
+    let replaced = false, changed = false;
+    const edit = (text: string): string => {
+      const hits = findInjectHits(text, [kind]);
+      if (!hits.length) return text;
+      const updated = blob && !replaced ? replaceHits(text, hits, normalizeBlob(blob)) : stripHits(text, hits);
+      if (blob) replaced = true;
+      if (updated !== text) changed = true;
+      return updated;
+    };
+    if (format === "responses" && typeof doc.instructions === "string") doc.instructions = edit(doc.instructions);
+    for (const msg of messages) {
+      if (!msg || !["system", "developer"].includes(String(msg.role))) continue;
+      if (typeof msg.content === "string") msg.content = edit(msg.content);
+      else if (Array.isArray(msg.content)) for (const part of msg.content) {
+        if (part && ["text", "input_text"].includes(part.type) && typeof part.text === "string") part.text = edit(part.text);
+      }
+    }
+    if (blob && !replaced) {
+      changed = true;
+      // Keep the existing prefix stable for caching. A separate instruction item is
+      // valid in both Chat Completions and Responses and does not mutate history.
+      messages.push({ role: "system", content: normalizeBlob(blob) });
+    }
+    if (!changed) return raw;
+    doc[field] = messages;
+    return Buffer.from(JSON.stringify(doc));
+  } catch { return raw; }
 }
 
-export function injectBriefIntoMessages(raw: Buffer, blob: string | null): Buffer {
-  return injectBlock(raw, blob, BRIEF_MARKER, BRIEF_CLOSE);
+export function injectMapIntoMessages(raw: Buffer, blob: string | null, format: LlmRequestFormat = "anthropic"): Buffer {
+  return format === "anthropic" ? injectBlock(raw, blob, INJECT_MARKER, INJECT_CLOSE) : injectOtherFormat(raw, blob, "map", format);
+}
+
+export function injectBriefIntoMessages(raw: Buffer, blob: string | null, format: LlmRequestFormat = "anthropic"): Buffer {
+  return format === "anthropic" ? injectBlock(raw, blob, BRIEF_MARKER, BRIEF_CLOSE) : injectOtherFormat(raw, blob, "brief", format);
 }
 
 export function requestHasRealInject(raw: Buffer, kind: "map" | "brief" = "map"): boolean {
   try {
     const doc = JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
-    for (const item of toSystemBlocks(doc.system)) {
-      if (findInjectHits(systemTextOf(item), [kind]).length) return true;
+    const instructionText = toSystemBlocks(doc.system).map(systemTextOf);
+    if (typeof doc.instructions === "string") instructionText.push(doc.instructions);
+    for (const field of ["messages", "input"]) {
+      if (!Array.isArray(doc[field])) continue;
+      for (const msg of doc[field]) if (msg && ["system", "developer"].includes(msg.role)) {
+        instructionText.push(...toSystemBlocks(msg.content).map(systemTextOf));
+      }
     }
-  } catch {
-    return false;
-  }
-  return false;
+    return instructionText.some(text => findInjectHits(text, [kind]).length > 0);
+  } catch { return false; }
 }

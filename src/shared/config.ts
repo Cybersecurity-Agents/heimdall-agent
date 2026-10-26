@@ -529,7 +529,7 @@ export function loadConfig(path?: string | null, repoRoot?: string | null): Conf
     repo_root: root,
     workspace_root: null,
     tools_env_path: toolsEnvPath,
-    tools_env: loadToolsEnv(toolsEnvPath),
+    tools_env: loadToolsEnv(toolsEnvPath, process.env),
     enforce_tools_required: Boolean(docker.enforce_tools_required ?? true),
     agent_backend: agentBackend,
     agent_permission_mode: String(
