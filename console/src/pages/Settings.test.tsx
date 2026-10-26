@@ -24,7 +24,7 @@ const state = {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("matchMedia", () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} }));
-  state.vpn = null; state.flash = null;
+  state.vpn = null; state.flash = null; state.llm = {};
   mocked.loadSettings.mockResolvedValue(undefined);
   mocked.loadVpn.mockResolvedValue(undefined);
   mocked.setFlash.mockImplementation((id: string, msg: string, kind?: string) => { state.flash = { id, msg, kind }; });
@@ -105,4 +105,50 @@ describe("Settings VPN feedback", () => {
       expect(container.querySelector(".flash.bad")?.textContent).toBe("VPN profile is missing");
     } finally { await act(async () => root.unmount()); container.remove(); }
   });
+});
+
+
+describe("model tuning settings", () => {
+  it("submits independent loop tuning and keeps edits after validation fails", async () => {
+    state.llm = {
+      solver: { HEIMDALL_THINKING: { value: "high" } },
+      loop: { HEIMDALL_LOOP_THINKING: { value: "low" }, HEIMDALL_LOOP_MAX_OUTPUT_TOKENS: { value: "8192" } },
+    };
+    mocked.api.mockResolvedValue({ ok: false, error: "CONTEXT_WINDOW is too small" });
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<SettingsPage />); });
+      const input = container.querySelector<HTMLInputElement>("#HEIMDALL_LOOP_CONTEXT_WINDOW")!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "64000");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => { container.querySelector("#llm-form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+      const call = mocked.api.mock.calls.find(args => args[0] === "/api/settings")!;
+      expect(JSON.parse(call[1].body).llm).toMatchObject({
+        HEIMDALL_THINKING: "high", HEIMDALL_LOOP_THINKING: "low", HEIMDALL_LOOP_CONTEXT_WINDOW: "64000", HEIMDALL_LOOP_MAX_OUTPUT_TOKENS: "8192",
+      });
+      expect(input.value).toBe("64000");
+      expect(container.querySelector("#llm-form [role=alert]")?.textContent).toBe("CONTEXT_WINDOW is too small");
+      expect(mocked.setFlash).toHaveBeenCalledWith("settings", "CONTEXT_WINDOW is too small", "bad");
+      expect(container.textContent).toContain(I18N.zh.llmApplyHelp);
+    } finally { await act(async () => root.unmount()); container.remove(); }
+  });
+});
+
+it("round-trips the Responses protocol and displays a separate unsupported Claude slot", async () => {
+  state.llm = { solver: { ANTHROPIC_MODEL: { value: "grok-4.7" }, HEIMDALL_LLM_API: { value: "openai-responses" } },
+    effective: { loop: null, loop_error: "Claude SDK requires an Anthropic-compatible gateway" } };
+  mocked.api.mockResolvedValue({ ok: true });
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => { root.render(<SettingsPage />); });
+    expect(container.textContent).toContain("Responses (xAI / Grok)");
+    expect(container.textContent).toContain("Claude SDK requires an Anthropic-compatible gateway");
+    await act(async () => { container.querySelector("#llm-form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    const call = mocked.api.mock.calls.find(args => args[0] === "/api/settings")!;
+    expect(JSON.parse(call[1].body).llm).toMatchObject({ ANTHROPIC_MODEL: "grok-4.7", HEIMDALL_LLM_API: "responses" });
+  } finally { await act(async () => root.unmount()); container.remove(); }
 });

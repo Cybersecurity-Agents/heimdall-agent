@@ -19,6 +19,8 @@ COPY deploy/unified/ ./deploy/unified/
 COPY console/ ./console/
 COPY tools.env.example.yaml ./
 RUN npm run build && npm prune --omit=dev \
+ && test -x node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
+ && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-linux-x64-musl \
  && rm -rf src console/node_modules console/src /root/.npm
 
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
@@ -34,6 +36,7 @@ ENTRYPOINT ["/usr/local/bin/heimdall-vpn"]
 
 # Match the established Debian 12 runtime; Node and npm are already included.
 FROM ${NODE_IMAGE} AS tools
+ARG HEIMDALL_APT_MIRROR=http://deb.debian.org
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright PWTEST_CLI_GLOBAL_CONFIG=/opt/heimdall \
     GHIDRA_INSTALL_DIR=/opt/heimdall/ghidra GHIDRA_HOME=/opt/heimdall/ghidra \
@@ -71,6 +74,7 @@ RUN bash /opt/heimdall/scripts/install/install-dirscan.sh \
  && dpkg-query -W > /opt/heimdall/tool-versions/dpkg.txt
 
 FROM tools AS runtime
+ARG VCS_REF=unknown
 WORKDIR /opt/heimdall
 COPY --from=app-build /opt/heimdall/ /opt/heimdall/
 ENV HEIMDALL_AGENT_BACKEND=pi PI_OFFLINE=1 \
@@ -85,6 +89,7 @@ RUN rm -f /usr/share/sqlmap/data/txt/wordlist.tx_ \
  && chmod 0755 scripts/runtime/*.sh deploy/unified/entrypoint.sh \
  && node scripts/build/check-tools.mjs --write-marker
 LABEL org.opencontainers.image.source="https://github.com/QiantangCredit/heimdall-agent" \
+      org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.title="Heimdall full tools runtime" \
       org.heimdall.tools.profile="full"
 

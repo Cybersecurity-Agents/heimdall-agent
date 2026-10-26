@@ -1,3 +1,5 @@
+import { readCatalogState, updateCatalog } from "../capability-catalog.js";
+import { CATALOG_ENV } from "../../shared/model-capabilities.js";
 import { LedgerError } from "../../shared/project-ledger.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -184,7 +186,7 @@ async function handle(cfg: Config, desk: Desk, req: IncomingMessage, res: Server
     }
     if (method === "POST" || method === "PUT") {
       const body = await readBody(req);
-      await handlePost(desk, path, body, res);
+      await handlePost(cfg, desk, path, body, res);
       return;
     }
     if (method === "DELETE") {
@@ -226,6 +228,9 @@ async function handleGet(
   if (path === "/api/challenges") {
     sendJson(res, 200, { items: desk.challenges() }, head);
     return;
+  }
+  if (path === "/api/llm-catalog") {
+    sendJson(res, 200, readCatalogState(cfg), head); return;
   }
   if (path === "/api/settings") {
     sendJson(res, 200, desk.settingsBundle(), head);
@@ -371,6 +376,7 @@ function graphsSafe(code: string): string {
 }
 
 async function handlePost(
+  cfg: Config,
   desk: Desk,
   path: string,
   body: Record<string, unknown>,
@@ -390,6 +396,13 @@ async function handlePost(
   }
   if (path === "/api/flags") {
     sendJson(res, 200, await desk.submitFlag(body));
+    return;
+  }
+  if (path === "/api/llm-catalog") {
+    try {
+      const state = await updateCatalog(cfg, body, catalog => llmIo.effectiveOptions({ ...cfg.tools_env.values, [CATALOG_ENV]: JSON.stringify(catalog) }));
+      sendJson(res, 200, { ok: true, ...state });
+    } catch (error) { sendJson(res, 400, { ok: false, error: (error as Error).message }); }
     return;
   }
   if (path === "/api/settings") {

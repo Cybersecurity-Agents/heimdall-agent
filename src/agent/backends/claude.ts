@@ -1,11 +1,10 @@
+import { startLlmAdapter, type LlmAdapterProxy } from "../../shared/llm-request-adapter.js";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { resolveLlmOptions, claudeThinkingOptions } from "../../shared/llm-options.js";
 import { join } from "node:path";
 import {
-  CONTEXT_WINDOW,
-  COMPACT_THRESHOLD,
   claudeAutocompactEnv,
   resolveModelId,
-  resolveThinking,
   sdkInheritAgents,
   sdkModelId,
   sdkModelOverrides,
@@ -13,19 +12,9 @@ import {
 import { claudeConfigDir, saveSession } from "../../shared/session.js";
 import { withWorkspacePlaybook } from "../prompts.js";
 import type { AgentRunResult, Backend, BackendRunOpts } from "./types.js";
-import type { Options, Query, EffortLevel, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, Query, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 
-const EFFORT: Record<string, EffortLevel | null> = {
-  off: null,
-  minimal: "low",
-  low: "low",
-  medium: "medium",
-  high: "high",
-  xhigh: "max",
-  max: "max",
-};
-
-function ensure1m(model: string | null): string | null {
+function resolveSdkModel(model: string | null): string | null {
   return sdkModelId(model) || null;
 }
 
@@ -36,11 +25,11 @@ export function seedClaudeWorkspace(
   const cfgDir = claudeConfigDir(workspace);
   mkdirSync(cfgDir, { recursive: true });
   mkdirSync(join(workspace, ".claude"), { recursive: true });
-  const modelId = ensure1m(resolveModelId(model)) || resolveModelId(model);
-  const thinking = resolveThinking();
+  const modelId = resolveSdkModel(resolveModelId(model)) || resolveModelId(model);
+  const tuning = resolveLlmOptions(process.env, modelId, "sdk");
   const settings: Record<string, unknown> = {
     model: modelId,
-    alwaysThinkingEnabled: thinking !== "off",
+    alwaysThinkingEnabled: tuning.thinkingMode !== "disabled",
     env: claudeAutocompactEnv(modelId),
     modelOverrides: sdkModelOverrides(modelId),
     agents: sdkInheritAgents(),
@@ -83,14 +72,17 @@ export class ClaudeBackend implements Backend {
         error: `claude-agent-sdk not installed: ${e}`,
       };
     }
+    let tuning: ReturnType<typeof resolveLlmOptions>;
+    try { tuning = resolveLlmOptions(process.env, sdkModelId(resolveModelId(opts.model)), "sdk"); }
+    catch (error) { return { backend: this.name, ok: false, exitCode: 2, retryable: false, error: String(error) }; }
     let sdkSettings: Options["settings"] = join(claudeConfigDir(opts.workspace), "settings.json");
     try {
       sdkSettings = seedClaudeWorkspace(opts.workspace, opts.model).settings as Options["settings"];
     } catch {
       /* ignore */
     }
-    const thinking = resolveThinking();
-    const modelId = ensure1m(opts.model) || opts.model || undefined;
+    const thinking = tuning.thinking;
+    const modelId = resolveSdkModel(resolveModelId(opts.model)) || undefined;
     const systemPrompt = withWorkspacePlaybook(opts.systemPrompt, opts.workspace) +
       (opts.goal ? `\n\n# Current task context\n${opts.userPrompt}` : "");
     const controller = new AbortController();
@@ -101,15 +93,16 @@ export class ClaudeBackend implements Backend {
     const before = { turns: opts.events.turnCount, tools: opts.events.toolUseCount, messages: opts.events.messageCount };
     const counts = () => ({ turns: opts.events.turnCount - before.turns, toolUses: opts.events.toolUseCount - before.tools, messages: opts.events.messageCount - before.messages });
     opts.events.writeText(
-      `[sdk] starting query cwd=${opts.workspace} max_turns=${opts.maxTurns} thinking=${thinking} compact=${COMPACT_THRESHOLD}%`,
+      `[sdk] starting query cwd=${opts.workspace} max_turns=${opts.maxTurns} thinking=${thinking} compact=${tuning.compactPct}%`,
     );
     opts.events.emit("sdk_start", {
       cwd: opts.workspace,
       max_turns: opts.maxTurns,
       model: modelId,
       thinking,
-      context_window: CONTEXT_WINDOW,
-      compact_pct: COMPACT_THRESHOLD,
+      context_window: tuning.contextWindow,
+      compact_pct: tuning.compactPct,
+      effective_config: tuning,
       goal_driver: opts.goal ? "native" : "none",
     });
     let sessionId = opts.resume || null;
@@ -118,10 +111,11 @@ export class ClaudeBackend implements Backend {
     let lastResult: string | null = null;
     let error: string | null = null;
     let goalUnavailable = false;
-    const budget = thinking === "off" ? 0 : thinking === "high" || thinking === "xhigh" || thinking === "max" ? 32768 : thinking === "medium" ? 8192 : thinking === "low" ? 4096 : 2048;
+    let adapter: LlmAdapterProxy | undefined;
     try {
-      const extraArgs: Record<string, string> = {};
+      adapter = await startLlmAdapter(process.env.ANTHROPIC_BASE_URL || process.env.HEIMDALL_LLM_BASE_URL || "https://api.anthropic.com", tuning);
       const options: Options = {
+        ...claudeThinkingOptions(tuning),
         cwd: opts.workspace,
         systemPrompt,
         permissionMode: opts.permissionMode as PermissionMode,
@@ -137,26 +131,13 @@ export class ClaudeBackend implements Backend {
         env: {
           ...process.env,
           ...claudeAutocompactEnv(modelId),
+          ANTHROPIC_BASE_URL: adapter.baseUrl,
         },
       };
       if (opts.maxTurns > 0) options.maxTurns = opts.maxTurns;
       if (modelId) options.model = modelId;
       if (opts.continueConversation && !opts.resume) options.continue = true;
       if (opts.resume) options.resume = opts.resume;
-      if (thinking === "off") {
-        options.thinking = { type: "disabled" };
-        extraArgs["max-thinking-tokens"] = "0";
-      } else {
-        options.thinking = { type: "enabled", budgetTokens: Math.max(1024, budget) };
-        options.maxThinkingTokens = Math.max(1024, budget);
-        extraArgs["max-thinking-tokens"] = String(Math.max(1024, budget));
-        const effort = EFFORT[thinking];
-        if (effort) {
-          options.effort = effort;
-          extraArgs.effort = effort;
-        }
-      }
-      if (Object.keys(extraArgs).length) options.extraArgs = extraArgs;
       this.active = query({ prompt: opts.goal ? `/goal ${opts.goal}` : opts.userPrompt, options });
       for await (const message of this.active) {
         opts.events.onMessage(message);
@@ -206,6 +187,7 @@ export class ClaudeBackend implements Backend {
       this.active?.close();
       this.active = null;
       this.controller = null;
+      await adapter?.close();
     }
     let ok = !error && !resultIsError && resultSubtype !== null && !controller.signal.aborted;
     if (resultSubtype && ["error", "error_during_execution", "error_max_turns", "error_max_budget_usd"].includes(resultSubtype.toLowerCase())) {

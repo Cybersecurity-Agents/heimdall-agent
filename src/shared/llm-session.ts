@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 import {
   appendFileSync,
   existsSync,
@@ -106,12 +107,19 @@ export function flattenMessages(body: Record<string, unknown> | null | undefined
     const text = blocksToText(body.system);
     if (text.trim()) out.push({ role: "system", parts: annotateText(text) });
   }
-  const messages = body.messages;
+  if (typeof body.instructions === "string" && body.instructions.trim()) out.push({ role: "system", parts: annotateText(body.instructions) });
+  const messages = body.messages ?? (typeof body.input === "string" ? [{ role: "user", content: body.input }] : body.input);
   if (!Array.isArray(messages)) return out;
   for (const msg of messages) {
     if (!msg || typeof msg !== "object" || Array.isArray(msg)) continue;
     const rec = msg as Record<string, unknown>;
     const role = String(rec.role || "user").trim().toLowerCase() || "user";
+    if (rec.type === "reasoning") continue; // Ciphertext is continuation data, never display it as assistant prose.
+    if (rec.type === "function_call" || rec.type === "function_call_output") {
+      const text = rec.type === "function_call" ? `[tool_use ${rec.name || "tool"}]\n${String(rec.arguments || "")}` : `[tool_result]\n${blocksToText(rec.output)}`;
+      out.push({ role: rec.type === "function_call" ? "assistant" : "tool", parts: annotateText(text) });
+      continue;
+    }
     const text = blocksToText(rec.content);
     if (!text.trim() && role !== "assistant" && role !== "user") continue;
     out.push({ role, parts: text ? annotateText(text) : [] });
@@ -164,6 +172,7 @@ export function refreshRecord(rec: Record<string, unknown> | null | undefined): 
 function deltaText(obj: unknown): string {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return "";
   const rec = obj as Record<string, unknown>;
+  if (rec.type === "response.output_text.delta" && typeof rec.delta === "string") return rec.delta;
   const delta = rec.delta;
   if (delta && typeof delta === "object" && !Array.isArray(delta)) {
     const d = delta as Record<string, unknown>;
@@ -194,6 +203,7 @@ function deltaText(obj: unknown): string {
 
 /** Collect assistant text from Anthropic SSE / OpenAI stream / JSON. */
 export class ReplyCollector {
+  private decoder = new StringDecoder("utf8");
   private buf = "";
   private chunks: string[] = [];
 
@@ -201,7 +211,7 @@ export class ReplyCollector {
     if (chunk == null) return;
     if (typeof chunk !== "string" && chunk.length === 0) return;
     if (typeof chunk === "string" && !chunk) return;
-    this.buf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    this.buf += typeof chunk === "string" ? chunk : this.decoder.write(Buffer.from(chunk));
     this.drain();
     if (this.buf.length > 256_000) this.buf = this.buf.slice(-64_000);
   }
@@ -237,6 +247,8 @@ export class ReplyCollector {
   }
 
   finish(): string {
+    this.buf += this.decoder.end();
+    this.decoder = new StringDecoder("utf8");
     this.drain();
     const leftover = this.buf.trim();
     this.buf = "";
@@ -247,6 +259,7 @@ export class ReplyCollector {
         if (!piece && obj && typeof obj === "object" && !Array.isArray(obj)) {
           const rec = obj as Record<string, unknown>;
           piece = blocksToText(rec.content);
+          if (!piece && Array.isArray(rec.output)) piece = rec.output.filter(item => item?.type === "message").map(item => blocksToText(item.content)).join("\n");
           if (!piece) {
             const choices = rec.choices;
             if (Array.isArray(choices) && choices[0] && typeof choices[0] === "object") {

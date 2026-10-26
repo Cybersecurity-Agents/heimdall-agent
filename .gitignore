@@ -92,3 +92,5 @@ tsecbench/token.txt
 # Deployment backups can contain model credentials and task sessions.
 /heimdall-backup*/
 *.sfdisk
+
+/.runtime/

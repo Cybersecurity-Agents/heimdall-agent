@@ -1,15 +1,15 @@
+import { startLlmAdapter, type LlmAdapterProxy } from "../../shared/llm-request-adapter.js";
+import { resolveLlmOptions, type LlmOptions } from "../../shared/llm-options.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { wallRemainingMs } from "../../policy/job-clock.js";
 import { createInterface } from "node:readline";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  COMPACT_THRESHOLD,
-  piAgentDir,
+  piAgentDir, buildModelsDoc, resolveBaseUrl,
   resolveModelId,
   resolveProvider,
-  resolveThinking,
   seedPiWorkspace,
   SOLVER_TOOLS,
 } from "../../shared/pi-workspace.js";
@@ -42,6 +42,7 @@ class PiRpc {
   constructor(
     readonly proc: ChildProcessWithoutNullStreams,
     readonly events: EventSink | null,
+    readonly tuning: LlmOptions,
   ) {
     const rl = createInterface({ input: proc.stdout });
     rl.on("line", (line) => {
@@ -186,7 +187,8 @@ class PiRpc {
         if (maxTurns > 0 && stats.turns >= maxTurns && !aborted) {
           aborted = true;
           try {
-            await this.request({ type: "abort" }, 10_000);
+            // Continue consuming events here: request() would discard an already queued agent_settled.
+            this.send({ type: "abort" });
           } catch {
             /* ignore */
           }
@@ -208,7 +210,8 @@ class PiRpc {
     }
   }
 
-  async maybeCompact(threshold = COMPACT_THRESHOLD): Promise<boolean> {
+  async maybeCompact(threshold = this.tuning.compactPct): Promise<boolean> {
+    if (!this.tuning.compactEnabled) return false;
     if (this.dead) return false;
     try {
       const resp = await this.request({ type: "get_session_stats" }, 15_000);
@@ -248,20 +251,25 @@ class PiRpc {
 
 export class PiRpcBackend implements Backend {
   name = "pi";
+  private adapter: LlmAdapterProxy | null = null;
   private rpc: PiRpc | null = null;
 
   async close(): Promise<void> {
     this.rpc?.close();
     this.rpc = null;
+    await this.adapter?.close();
+    this.adapter = null;
   }
 
-  async maybeCompact(threshold = COMPACT_THRESHOLD): Promise<boolean> {
+  async maybeCompact(threshold?: number): Promise<boolean> {
     if (!this.rpc || this.rpc.dead) return false;
     return this.rpc.maybeCompact(threshold);
   }
 
   async run(opts: BackendRunOpts): Promise<AgentRunResult> {
     const { workspace, systemPrompt, model, events, userPrompt, maxTurns } = opts;
+    try { resolveLlmOptions(process.env, resolveModelId(model), "pi"); }
+    catch (error) { return { backend: this.name, ok: false, exitCode: 2, retryable: false, error: String(error) }; }
     try {
       seedPiWorkspace(workspace, { systemPrompt, model });
     } catch (e) {
@@ -270,6 +278,7 @@ export class PiRpcBackend implements Backend {
     try {
       await this.ensureRpc(opts);
     } catch (e) {
+      await this.close();
       const msg = `${(e as Error).name || "Error"}: ${(e as Error).message || e}`;
       events.emit("pi_error", { error: msg });
       events.writeText(`[pi] error: ${msg}`);
@@ -342,15 +351,21 @@ export class PiRpcBackend implements Backend {
 
   private async ensureRpc(opts: BackendRunOpts): Promise<void> {
     if (this.rpc && !this.rpc.dead) return;
-    this.rpc?.close();
-    this.rpc = null;
+    await this.close();
 
     const agentDir = piAgentDir(opts.workspace);
     process.env.PI_CODING_AGENT_DIR = agentDir;
     process.env.PI_OFFLINE = process.env.PI_OFFLINE || "1";
     const modelId = resolveModelId(opts.model);
     const provider = resolveProvider();
-    const thinking = resolveThinking();
+    const tuning = resolveLlmOptions(process.env, modelId, "pi");
+    const upstream = resolveBaseUrl();
+    if (upstream) {
+      this.adapter = await startLlmAdapter(upstream, tuning);
+      writeFileSync(join(agentDir, "models.json"), JSON.stringify(buildModelsDoc({ modelId, provider, baseUrl: this.adapter.baseUrl, env: { ...process.env, HEIMDALL_LLM_API: tuning.protocol } })));
+    }
+    const thinking = tuning.thinking;
+    opts.events.emit("llm_config", { effective_config: tuning });
     const tools = SOLVER_TOOLS.join(",");
     const cmd = [
       ...whichPi(),
@@ -383,7 +398,7 @@ export class PiRpcBackend implements Backend {
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const rpc = new PiRpc(proc as ChildProcessWithoutNullStreams, opts.events);
+    const rpc = new PiRpc(proc as ChildProcessWithoutNullStreams, opts.events, tuning);
     try {
       await rpc.refreshState(30_000);
     } catch (e) {
@@ -393,7 +408,7 @@ export class PiRpcBackend implements Backend {
     }
     for (const type of ["set_auto_compaction", "set_auto_retry"]) {
       try {
-        await rpc.request({ type, enabled: true }, 10_000);
+        await rpc.request({ type, enabled: type === "set_auto_compaction" ? tuning.compactEnabled : true }, 10_000);
       } catch {
         /* ignore */
       }

@@ -46,6 +46,18 @@ describe("public container deployment", () => {
 
 
 describe("model environment initialization", () => {
+  it("persists reasoning options at first boot and preserves saved tuning on recreation", () => {
+    const data = mkdtempSync(join(tmpdir(), "heimdall-model-tuning-")); temporary.push(data);
+    const env = { PATH: process.env.PATH, HEIMDALL_REPO_ROOT: resolve("."), HEIMDALL_DATA_DIR: data,
+      HEIMDALL_THINKING: "max", HEIMDALL_CAPABILITY_PROFILE: "deepseek", HEIMDALL_CONTEXT_WINDOW: "262144",
+      HEIMDALL_LOOP_THINKING: "low", HEIMDALL_LOOP_COMPACT_ENABLED: "false", HEIMDALL_LOOP_THINKING_MODE: "auto" };
+    execFileSync(process.execPath, ["deploy/unified/init.mjs"], { env });
+    const cfg = loadConfig(join(data, "config/config.yaml"), data);
+    expect(cfg.tools_env.values).toMatchObject({ HEIMDALL_THINKING: "max", HEIMDALL_CAPABILITY_PROFILE: "deepseek",
+      HEIMDALL_CONTEXT_WINDOW: "262144", HEIMDALL_LOOP_THINKING: "low", HEIMDALL_LOOP_COMPACT_ENABLED: "false" });
+    execFileSync(process.execPath, ["deploy/unified/init.mjs"], { env: { ...env, HEIMDALL_THINKING: "low" } });
+    expect(loadConfig(join(data, "config/config.yaml"), data).tools_env.values.HEIMDALL_THINKING).toBe("max");
+  });
   for (const prefix of ["HEIMDALL", "OPENAI", "ANTHROPIC"]) {
     it(`persists ${prefix} aliases for both local and Docker jobs`, () => {
       const data = mkdtempSync(join(tmpdir(), "heimdall-model-env-")); temporary.push(data);
