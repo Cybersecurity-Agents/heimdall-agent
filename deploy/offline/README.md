@@ -2,6 +2,27 @@
 
 需要 Docker Engine 或 Docker Desktop，以及 Docker Compose v2。镜像为 `linux/amd64`，包含完整工具环境；ARM 主机需要 Docker 的 amd64 模拟支持。
 
+## 从 GitHub Release 一键安装
+
+```bash
+curl -fL https://github.com/QiantangCredit/heimdall-agent/releases/latest/download/download-install.sh -o download-install.sh
+bash download-install.sh
+# 自定义端口：HEIMDALL_PORT=8701 bash download-install.sh
+```
+
+下载器自动下载、校验和合并分卷，然后运行包内安装器；已有的 `.env` 和数据卷会保留。安装目录默认为当前路径下的 `heimdall-offline`，可用 `HEIMDALL_INSTALL_DIR` 指定。下载器固定到对应发布版本，也可用 `HEIMDALL_RELEASE` 指定另一个兼容版本。
+
+GitHub 单个附件必须小于 2 GiB，因此约 2.5 GiB 的离线包拆成两个分卷。完全离线安装时，在联网机器从同一 Release 下载 `heimdall-agent-linux-amd64.tar.part01`、`.part02` 和 `SHA256SUMS`，复制到同一目录后执行：
+
+```bash
+cat heimdall-agent-linux-amd64.tar.part01 heimdall-agent-linux-amd64.tar.part02 > heimdall-agent-linux-amd64.tar
+awk '$2 ~ /^heimdall-agent-linux-amd64\.tar(\.part0[12])?$/ { print }' SHA256SUMS | sha256sum -c -
+# macOS 若无 sha256sum，将上一行末尾替换为 shasum -a 256 -c -
+tar -xf heimdall-agent-linux-amd64.tar
+```
+
+## 启动离线包
+
 解压发布包后运行：
 
 ```bash
